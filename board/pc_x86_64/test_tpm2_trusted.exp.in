@@ -1,0 +1,26 @@
+#!/usr/bin/expect -f
+
+set timeout -1
+spawn socat - UNIX-CONNECT:serial.sock
+send "tpm2_createprimary --hierarchy o -G rsa2048 -c key.ctxt\n"
+expect "sym-keybits: 128"
+expect "# "
+sleep 2
+send "tpm2_evictcontrol -c key.ctxt 0x81000001\n"
+expect "action: persisted"
+expect "# "
+sleep 2
+send "keyctl add trusted kmk 'new 32 keyhandle=0x81000001' @u\n"
+expect "# "
+sleep 2
+send "keyctl add encrypted 1000100010001000 'new ecryptfs trusted:kmk 64' @u\n"
+expect "# "
+sleep 2
+send "keyctl list @u\n"
+expect "2 keys in keyring:"
+expect "# "
+sleep 2
+send "tpm2_evictcontrol -C o -c 0x81000001\n"
+expect "action: evicted"
+expect "# "
+sleep 2

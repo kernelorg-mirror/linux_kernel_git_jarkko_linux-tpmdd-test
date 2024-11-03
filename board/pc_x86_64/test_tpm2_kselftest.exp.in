@@ -1,0 +1,17 @@
+#!/usr/bin/expect -f
+
+set timeout -1
+spawn socat - UNIX-CONNECT:serial.sock
+expect "login: "
+send "root\n"
+expect "# "
+send "/usr/lib/kselftests/run_kselftest.sh -t tpm2:test_smoke.sh\n"
+expect "ok 1 selftests: tpm2: test_smoke.sh"
+expect "# "
+send "/usr/lib/kselftests/run_kselftest.sh -t tpm2:test_space.sh\n"
+expect "ok 1 selftests: tpm2: test_space.sh"
+expect "# "
+send "/usr/lib/kselftests/run_kselftest.sh -t tpm2:test_async.sh\n"
+expect "ok 1 selftests: tpm2: test_async.sh"
+expect "# "
+sleep 2
