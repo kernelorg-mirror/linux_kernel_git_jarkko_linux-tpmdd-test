@@ -11,7 +11,7 @@ if(NOT EXISTS "${configs_dir}/${buildroot_defconfig}")
 endif()
 
 ExternalProject_Add(buildroot-prepare
-  URL "https://buildroot.org/downloads/buildroot-2024.11.tar.gz"
+  URL "https://buildroot.org/downloads/buildroot-2025.02.3.tar.gz"
   PREFIX buildroot
   SOURCE_DIR ${buildroot_dir}/src
   BINARY_DIR ${buildroot_dir}/build
