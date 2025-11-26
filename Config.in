@@ -1,0 +1,1 @@
+source "$BR2_EXTERNAL_TPMDD_PATH/package/tpm2sh/Config.in"

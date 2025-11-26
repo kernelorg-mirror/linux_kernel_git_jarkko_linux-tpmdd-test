@@ -6,13 +6,32 @@ set -u
 cd "${0%/*}/"
 
 function finish {
-  kill -15 $(cat qemu.pid) 2>&1 > /dev/null && true
+  if [[ -f qemu.pid ]]; then
+    pid="$(cat qemu.pid)"
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      kill -15 "$pid" >/dev/null 2>&1 || true
+    fi
+  fi
 }
 trap finish EXIT
 
 echo *** [QEMU]
 sleep 2
 ./run-qemu.sh &
+
+# Wait for the serial socket to be created by QEMU (headless mode).
+serial_sock="serial.sock"
+echo "*** [WAIT] serial socket: $serial_sock"
+tries=0
+max_tries=120
+while [[ ! -S "$serial_sock" ]]; do
+  if [[ $tries -ge $max_tries ]]; then
+    echo "ERROR: $serial_sock did not appear; QEMU may have exited early." >&2
+    exit 1
+  fi
+  sleep 1
+  tries=$((tries + 1))
+done
 
 echo *** [KSELFTEST]
 sleep 2

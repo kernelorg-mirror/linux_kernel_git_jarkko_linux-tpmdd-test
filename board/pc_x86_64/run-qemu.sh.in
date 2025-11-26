@@ -1,55 +1,117 @@
 #!/usr/bin/env bash
-
 set -e
 
 cd "${0%/*}/" || exit 1
 
+swtpm_dir=$(mktemp -d -t swtpm-XXXXXX)
+swtpm_state_dir="$swtpm_dir/state"
+swtpm_conf_dir="$swtpm_dir/config"
+swtpm_localca_dir="$swtpm_dir/localca"
+
+function cleanup {
+  if (( $(jobs -p | wc -l) > 0 )); then
+    kill "$(jobs -p)"
+  fi
+  rm -rf "$swtpm_dir"
+}
+trap cleanup EXIT
+
+mkdir -p "$swtpm_state_dir" "$swtpm_conf_dir" "$swtpm_localca_dir"
+chmod 700 "$swtpm_state_dir" "$swtpm_localca_dir"
+
+cat >"$swtpm_conf_dir/swtpm-localca.conf" <<EOF
+statedir = $swtpm_localca_dir
+signingkey = $swtpm_localca_dir/signkey.pem
+issuercert = $swtpm_localca_dir/issuercert.pem
+certserial = $swtpm_localca_dir/certserial
+EOF
+
+cat >"$swtpm_conf_dir/swtpm-localca.options" <<'EOF'
+--platform-manufacturer Buildroot
+--platform-version 0
+--platform-model QEMU
+EOF
+
+cat >"$swtpm_conf_dir/swtpm_setup.conf" <<EOF
+create_certs_tool = swtpm_localca
+create_certs_tool_config = $swtpm_conf_dir/swtpm-localca.conf
+create_certs_tool_options = $swtpm_conf_dir/swtpm-localca.options
+EOF
+
 opt_tty1=false
 QEMU_TPM_DEVICE="tpm-tis"
 SWTPM_TPM2="--tpm2"
+gdb_port=""
 
 while [ "$1" ]; do
   case "$1" in
   --tty1) opt_tty1=true; shift;;
   --tpm-crb) QEMU_TPM_DEVICE="tpm-crb"; shift;;
   --tpm1) SWTPM_TPM2=""; shift;;
+  --gdb) gdb_port="1234"; shift;;
+  --gdb=*) gdb_port="${1#--gdb=}"; shift;;
   --) shift; break;;
   *) echo "unknown option: $1" >&2; exit 1;;
   esac
 done
 
-extra_args=$@
+extra_args=("$@")
 if ! $opt_tty1; then
-  extra_args+=" -nographic"
+  extra_args+=("-nographic")
 fi
-echo "Extra Arguments: $extra_args"
+if [[ -n "$gdb_port" ]]; then
+  extra_args+=("-S" "-gdb" "tcp::${gdb_port}")
+fi
 
-swtpm_dir=$(mktemp -d -t swtpm-XXXX)
+if [ -n "$SWTPM_TPM2" ]; then
+  swtpm_setup \
+    --tpm2 \
+    --tpmstate "$swtpm_state_dir" \
+    --create-ek-cert \
+    --allow-signing \
+    --overwrite \
+    --config "$swtpm_conf_dir/swtpm_setup.conf"
+fi
+
 swtpm socket \
-  --tpmstate dir="$swtpm_dir" \
-  --ctrl type=unixio,path="$swtpm_dir"/swtpm-sock \
-  --log level=20 ${SWTPM_TPM2} -d
+  --tpmstate dir="$swtpm_state_dir" \
+  --ctrl type=unixio,path="$swtpm_dir/swtpm-sock" \
+  --log file=swtpm.log,level=20 ${SWTPM_TPM2} -d
 
-# Enumerate paths for the OVMF blob in Debian and Fedora:
-for ovmf in "/usr/share/qemu/OVMF.fd" "/usr/share/OVMF/OVMF_CODE.fd"; do
-  if [[ -f $ovmf ]]; then
-    echo "OVMF: $ovmf"
-    break
-  fi
-done
+graphics_args=()
+if $opt_tty1; then
+  graphics_args+=("-display" "none")
+  graphics_args+=("-device" "virtio-vga")
+  graphics_args+=("-spice" "unix=on,addr=${PWD}/spice.sock,disable-ticketing=on")
+  graphics_args+=("-device" "virtio-serial-pci")
+  graphics_args+=("-chardev" "spicevmc,id=vdagent0,name=vdagent")
+  graphics_args+=("-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0")
+  graphics_args+=("-vnc" ":1")
+  echo "TTY1: enabled"
+  echo "TTY1: spice+unix://${PWD}/spice.sock"
+fi
+
+serial_args=()
+if $opt_tty1; then
+  serial_args+=("-serial" "none")
+else
+  serial_args+=("-serial" "unix:serial.sock,server,wait")
+fi
 
 echo $$ > qemu.pid
 exec qemu-system-x86_64 \
   -M pc \
   -m 1G \
   -monitor unix:monitor.sock,server,nowait \
-  -serial unix:serial.sock,server,wait \
+  "${serial_args[@]}" \
   -drive file=disk.img,if=virtio,format=raw \
-  -net nic,model=virtio \
-  -net user,hostfwd=tcp::10022-:22 \
+  -netdev user,id=net0,hostfwd=tcp::10022-:22 \
+  -device virtio-net-pci,netdev=net0 \
   -rtc base=localtime \
   -chardev socket,id=chrtpm,path="$swtpm_dir"/swtpm-sock \
   -tpmdev emulator,id=tpm0,chardev=chrtpm \
   -device ${QEMU_TPM_DEVICE},tpmdev=tpm0 \
-  -bios "$ovmf" \
-  $extra_args
+  -drive if=pflash,format=raw,file="$PWD/OVMF_CODE.fd",readonly=on \
+  -drive if=pflash,format=raw,file="$PWD/OVMF_VARS.fd" \
+  "${graphics_args[@]}" \
+  "${extra_args[@]}"

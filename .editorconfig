@@ -1,0 +1,11 @@
+root = true
+
+[*]
+indent_style = unset
+indent_size = unset
+tab_width = unset
+
+[*.sh]
+indent_style = space
+indent_size = 2
+tab_width = 2

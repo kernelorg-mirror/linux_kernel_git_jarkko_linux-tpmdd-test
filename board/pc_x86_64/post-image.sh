@@ -26,12 +26,46 @@ sed -e "s|@IDENTITY_FILE@|$SSH_DIR/id-rsa|g" \
 
 function install_script {
   sed \
+    -e "s|@BINARIES_DIR@|${BINARIES_DIR}|g" \
     -e "s|@HOST_DIR@|${HOST_DIR}|g" \
     <"${BOARD_DIR}/$1.in" \
     >"${BINARIES_DIR}/$1"
   chmod +x "${BINARIES_DIR}/$1"
 }
+
+install_script swtpm-localca.conf
+install_script swtpm-profile.json
 install_script run-qemu.sh
 install_script run-tests.sh
 install_script test_tpm2_kselftest.exp
 install_script test_tpm2_trusted.exp
+
+OVMF_CODE_OUT="$BINARIES_DIR/OVMF_CODE.fd"
+OVMF_VARS_OUT="$BINARIES_DIR/OVMF_VARS.fd"
+OVMF_CANDIDATES="
+/usr/share/OVMF/OVMF_CODE.fd:/usr/share/OVMF/OVMF_VARS.fd
+/usr/share/OVMF/OVMF_CODE_4M.fd:/usr/share/OVMF/OVMF_VARS_4M.fd
+/usr/share/qemu/OVMF_CODE.fd:/usr/share/qemu/OVMF_VARS.fd
+/usr/share/qemu/OVMF_CODE.secboot.fd:/usr/share/qemu/OVMF_VARS.secboot.fd
+/usr/share/edk2/ovmf/OVMF_CODE.fd:/usr/share/edk2/ovmf/OVMF_VARS.fd
+/usr/share/edk2-ovmf/x64/OVMF_CODE.fd:/usr/share/edk2-ovmf/x64/OVMF_VARS.fd
+/usr/share/edk2/x64/OVMF_CODE.4m.fd:/usr/share/edk2/x64/OVMF_VARS.4m.fd
+"
+
+OVMF_CODE_IN=
+OVMF_VARS_IN=
+for pair in $OVMF_CANDIDATES; do
+  OVMF_CODE_IN=${pair%%:*}
+  OVMF_VARS_IN=${pair#*:}
+  if [ -f "$OVMF_CODE_IN" ] && [ -f "$OVMF_VARS_IN" ]; then
+    break
+  fi
+done
+
+if [ -z "$OVMF_CODE_IN" ] || [ -z "$OVMF_VARS_IN" ]; then
+  echo "OVMF firmware not found" >&2
+  exit 1
+fi
+
+cp "$OVMF_CODE_IN" "$OVMF_CODE_OUT"
+cp "$OVMF_VARS_IN" "$OVMF_VARS_OUT"

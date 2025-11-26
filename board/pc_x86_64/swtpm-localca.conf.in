@@ -1,0 +1,4 @@
+statedir = @HOST_DIR@/swtpm-localca
+signingkey = @HOST_DIR@/swtpm-localca/signkey.pem
+issuercert = @HOST_DIR@/swtpm-localca/issuercert.pem
+certserial = @HOST_DIR@/swtpm-localca/certserial

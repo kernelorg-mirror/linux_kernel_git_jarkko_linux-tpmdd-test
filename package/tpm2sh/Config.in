@@ -1,0 +1,8 @@
+config BR2_PACKAGE_TPM2SH
+	bool "tpm2sh"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	select BR2_PACKAGE_HOST_RUSTC
+	help
+	  'tpm2sh' is a command-line tool for accessing TPM 2.0 chips.
+
+	  https://git.kernel.org/pub/scm/linux/kernel/git/jarkko/tpm2sh.git/about/

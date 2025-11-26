@@ -2,42 +2,13 @@
 
 ## Building
 
-```
-git clone https://gitlab.com/jarkkojs/linux-tpmdd-test.git
-cd linux-tpmdd-test
-cmake -Bbuild -Dbuildroot_defconfig=<config> && make -Cbuild buildroot-prepare
-make -Cbuild/buildroot/build
-```
+1.  **Configure the project** (only needed for the first build):
+    ```
+    make prepare buildroot_defconfig=pc_x86_64_defconfig
+    ```
 
-## Test Suite
-
-### Running test suite
-
-```
-build/buildroot/build/images/run-tests.sh
-```
-
-## Instructions
-
-### Starting
-
-* TPM 2.0 FIFO: `build/buildroot/build/images/run-qemu.sh &`
-* TPM 2.0 CRB: `build/buildroot/build/images/run-qemu.sh --tpm-crb &`
-* TPM 1.2 FIFO: `build/buildroot/build/images/run-qemu.sh --tpm1 &`
-
-### Stopping
-
-```
-kill -15 $(cat build/buildroot/build/images/qemu.pid)
-```
-
-### Sockets
-
-* Serial: `build/buildroot/build/images/serial.sock`
-* Monitor: `build/buildroot/build/images/monitor.sock`
-
-### SSH
-
-```
-ssh -F build/buildroot/build/images/ssh_config tpmdd.local
-```
+2.  **Build the image**:
+    ```
+    make all
+    ```
+    For any subsequent changes, you can simply re-run `make all`.
