@@ -71,6 +71,15 @@ if [ -n "$SWTPM_TPM2" ]; then
     --allow-signing \
     --overwrite \
     --config "$swtpm_conf_dir/swtpm_setup.conf"
+else
+  swtpm_setup \
+    --tpmstate "$swtpm_state_dir" \
+    --take-ownership \
+    --owner-well-known \
+    --srk-well-known \
+    --create-ek-cert \
+    --overwrite \
+    --config "$swtpm_conf_dir/swtpm_setup.conf"
 fi
 
 swtpm socket \
