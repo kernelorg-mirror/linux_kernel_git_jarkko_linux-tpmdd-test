@@ -3,11 +3,11 @@
 set timeout -1
 spawn socat - UNIX-CONNECT:serial.sock
 send "tpm2sh create-primary rsa-2048:sha256\n"
-expect -re "(vtpm:........)"
-set handle $expect_out(0,string)
+expect -re {([0-9A-Fa-f]{8})}
+set handle $expect_out(1,string)
 expect "# "
 sleep 2
-send "tpm2sh evict $handle tpm:81000001\n"
+send "tpm2sh evict $handle 81000001\n"
 expect "# "
 sleep 2
 send "keyctl add trusted kmk 'new 32 keyhandle=0x81000001' @u\n"
@@ -20,9 +20,6 @@ send "keyctl list @u\n"
 expect "2 keys in keyring:"
 expect "# "
 sleep 2
-send "tpm2sh delete 'tpm:81*'\n"
-expect "# "
-sleep 2
-send "tpm2sh delete 'vtpm:*'\n"
+send "tpm2sh delete '*'\n"
 expect "# "
 sleep 2
