@@ -16,7 +16,7 @@ function cleanup {
 }
 trap cleanup EXIT
 
-opt_tty1=false
+opt_graphics=false
 opt_serial_socket=false
 QEMU_TPM_DEVICE="tpm-tis"
 SWTPM_TPM2="--tpm2"
@@ -24,7 +24,7 @@ gdb_port=""
 
 while [ "$1" ]; do
   case "$1" in
-  --tty1) opt_tty1=true; shift;;
+  --graphics) opt_graphics=true; shift;;
   --tpm-crb) QEMU_TPM_DEVICE="tpm-crb"; shift;;
   --tpm1) SWTPM_TPM2=""; shift;;
   --gdb) gdb_port="1234"; shift;;
@@ -36,11 +36,26 @@ while [ "$1" ]; do
 done
 
 extra_args=("$@")
-if ! $opt_tty1; then
+if ! $opt_graphics; then
   extra_args+=("-nographic")
 fi
 if [[ -n "$gdb_port" ]]; then
   extra_args+=("-S" "-gdb" "tcp::${gdb_port}")
+fi
+
+if $opt_graphics; then
+  extra_args+=("-display" "none")
+  extra_args+=("-device" "virtio-vga")
+  extra_args+=("-spice" "unix=on,addr=${PWD}/spice.sock,disable-ticketing=on")
+  extra_args+=("-device" "virtio-serial-pci")
+  extra_args+=("-chardev" "spicevmc,id=vdagent0,name=vdagent")
+  extra_args+=("-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0")
+  extra_args+=("-vnc" ":1")
+  echo "tty1: spice+unix://${PWD}/spice.sock"
+fi
+
+if $opt_serial_socket; then
+  extra_args+=("-serial" "unix:serial.sock,server,wait")
 fi
 
 mkdir -p "$swtpm_state_dir" "$swtpm_conf_dir" "$swtpm_localca_dir"
@@ -89,30 +104,11 @@ swtpm socket \
   --ctrl type=unixio,path="$swtpm_dir/swtpm-sock" \
   --log file=swtpm.log,level=20 ${SWTPM_TPM2} -d
 
-graphics_args=()
-if $opt_tty1; then
-  graphics_args+=("-display" "none")
-  graphics_args+=("-device" "virtio-vga")
-  graphics_args+=("-spice" "unix=on,addr=${PWD}/spice.sock,disable-ticketing=on")
-  graphics_args+=("-device" "virtio-serial-pci")
-  graphics_args+=("-chardev" "spicevmc,id=vdagent0,name=vdagent")
-  graphics_args+=("-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0")
-  graphics_args+=("-vnc" ":1")
-  echo "TTY1: enabled"
-  echo "TTY1: spice+unix://${PWD}/spice.sock"
-fi
-
-serial_args=()
-if $opt_serial_socket; then
-  serial_args+=("-serial" "unix:serial.sock,server,wait")
-fi
-
 echo $$ > qemu.pid
 exec qemu-system-x86_64 \
   -M pc \
   -m 1G \
   -monitor unix:monitor.sock,server,nowait \
-  "${serial_args[@]}" \
   -drive file=disk.img,if=virtio,format=raw \
   -netdev user,id=net0,hostfwd=tcp::10022-:22 \
   -device virtio-net-pci,netdev=net0 \
@@ -122,5 +118,4 @@ exec qemu-system-x86_64 \
   -device ${QEMU_TPM_DEVICE},tpmdev=tpm0 \
   -drive if=pflash,format=raw,file="$PWD/OVMF_CODE.fd",readonly=on \
   -drive if=pflash,format=raw,file="$PWD/OVMF_VARS.fd" \
-  "${graphics_args[@]}" \
   "${extra_args[@]}"
