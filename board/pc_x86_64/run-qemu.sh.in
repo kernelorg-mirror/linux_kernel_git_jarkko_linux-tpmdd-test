@@ -16,6 +16,33 @@ function cleanup {
 }
 trap cleanup EXIT
 
+opt_tty1=false
+opt_serial_socket=false
+QEMU_TPM_DEVICE="tpm-tis"
+SWTPM_TPM2="--tpm2"
+gdb_port=""
+
+while [ "$1" ]; do
+  case "$1" in
+  --tty1) opt_tty1=true; shift;;
+  --tpm-crb) QEMU_TPM_DEVICE="tpm-crb"; shift;;
+  --tpm1) SWTPM_TPM2=""; shift;;
+  --gdb) gdb_port="1234"; shift;;
+  --gdb=*) gdb_port="${1#--gdb=}"; shift;;
+  --serial-socket) opt_serial_socket=true; shift;;
+  --) shift; break;;
+  *) echo "unknown option: $1" >&2; exit 1;;
+  esac
+done
+
+extra_args=("$@")
+if ! $opt_tty1; then
+  extra_args+=("-nographic")
+fi
+if [[ -n "$gdb_port" ]]; then
+  extra_args+=("-S" "-gdb" "tcp::${gdb_port}")
+fi
+
 mkdir -p "$swtpm_state_dir" "$swtpm_conf_dir" "$swtpm_localca_dir"
 chmod 700 "$swtpm_state_dir" "$swtpm_localca_dir"
 
@@ -37,31 +64,6 @@ create_certs_tool = swtpm_localca
 create_certs_tool_config = $swtpm_conf_dir/swtpm-localca.conf
 create_certs_tool_options = $swtpm_conf_dir/swtpm-localca.options
 EOF
-
-opt_tty1=false
-QEMU_TPM_DEVICE="tpm-tis"
-SWTPM_TPM2="--tpm2"
-gdb_port=""
-
-while [ "$1" ]; do
-  case "$1" in
-  --tty1) opt_tty1=true; shift;;
-  --tpm-crb) QEMU_TPM_DEVICE="tpm-crb"; shift;;
-  --tpm1) SWTPM_TPM2=""; shift;;
-  --gdb) gdb_port="1234"; shift;;
-  --gdb=*) gdb_port="${1#--gdb=}"; shift;;
-  --) shift; break;;
-  *) echo "unknown option: $1" >&2; exit 1;;
-  esac
-done
-
-extra_args=("$@")
-if ! $opt_tty1; then
-  extra_args+=("-nographic")
-fi
-if [[ -n "$gdb_port" ]]; then
-  extra_args+=("-S" "-gdb" "tcp::${gdb_port}")
-fi
 
 if [ -n "$SWTPM_TPM2" ]; then
   swtpm_setup \
@@ -101,9 +103,7 @@ if $opt_tty1; then
 fi
 
 serial_args=()
-if $opt_tty1; then
-  serial_args+=("-serial" "none")
-else
+if $opt_serial_socket; then
   serial_args+=("-serial" "unix:serial.sock,server,wait")
 fi
 

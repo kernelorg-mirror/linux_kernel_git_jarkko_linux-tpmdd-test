@@ -17,7 +17,7 @@ trap finish EXIT
 
 echo *** [QEMU]
 sleep 2
-./run-qemu.sh &
+./run-qemu.sh --serial-socket &
 
 # Wait for the serial socket to be created by QEMU (headless mode).
 serial_sock="serial.sock"
