@@ -44,14 +44,11 @@ if [[ -n "$gdb_port" ]]; then
 fi
 
 if $opt_graphics; then
-  extra_args+=("-display" "none")
-  extra_args+=("-device" "virtio-vga")
-  extra_args+=("-spice" "unix=on,addr=${PWD}/spice.sock,disable-ticketing=on")
+  extra_args+=("-device" "virtio-vga-gl,hostmem=2G,blob=true,venus=true")
   extra_args+=("-device" "virtio-serial-pci")
   extra_args+=("-chardev" "spicevmc,id=vdagent0,name=vdagent")
   extra_args+=("-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0")
-  extra_args+=("-vnc" ":1")
-  echo "tty1: spice+unix://${PWD}/spice.sock"
+  extra_args+=("-display" "gtk,gl=on")
 fi
 
 if $opt_serial_socket; then
