@@ -1,0 +1,11 @@
+#!/usr/bin/expect -f
+
+set timeout -1
+spawn socat - UNIX-CONNECT:serial.sock
+expect "login: "
+send "root\n"
+expect "# "
+send "/usr/lib/kselftests/run_kselftest.sh -t rootns:smoke\n"
+expect "ok 1 selftests: rootns: smoke"
+expect "# "
+sleep 2

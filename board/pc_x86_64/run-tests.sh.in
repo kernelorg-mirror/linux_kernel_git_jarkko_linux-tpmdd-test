@@ -40,3 +40,7 @@ sleep 2
 echo *** [TRUSTED_TPM2]
 sleep 2
 ./test_tpm2_trusted.exp
+
+echo *** [CONTAINER]
+sleep 2
+./test_rootns.exp
