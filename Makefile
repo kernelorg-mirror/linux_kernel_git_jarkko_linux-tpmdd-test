@@ -24,11 +24,12 @@ UNPACK_STAMP		:= $(BUILD_STAMP_DIR)/.unpacked
 PATCH_STAMP		:= $(BUILD_STAMP_DIR)/.patched
 CONFIG_STAMP		:= $(BUILD_STAMP_DIR)/.configured
 
+DOWNLOAD_STAMP		:= $(BUILD_STAMP_DIR)/.downloaded
+
 MAKEOPTS := -C $(BUILD_SOURCE_DIR) O=$(abspath $(BUILD_BINARY_DIR)) BR2_EXTERNAL=$(abspath $(CURDIR)) V=0
 
-all: build
+all: $(BUILD_IMAGE_DIR)/disk.img ## Build the disk image.
 
-DOWNLOAD_STAMP		:= $(BUILD_STAMP_DIR)/.downloaded
 help: ## Show this help message.
 	@echo "Usage: make <target> [variable=value]"
 	@echo ""

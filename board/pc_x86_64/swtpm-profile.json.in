@@ -1,4 +1,0 @@
-{
-  "Name": "custom:tpmdd-p256",
-  "Algorithms": "rsa,rsa-min-size=2048,rsassa,rsapss,oaep,mgf1,ecc,ecc-nist-p256,ecc-nist-p384,ecc-bn-p256,ecdsa,ecdh,keyedhash,hmac,sha256,sha384,aes,aes-min-size=128,xor,null,kdf1-sp800-56a,kdf1-sp800-108,kdf2,symcipher,cfb"
-}

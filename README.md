@@ -4,7 +4,7 @@
 
 1.  **Configure the project** (only needed for the first build):
     ```
-    make prepare buildroot_defconfig=pc_x86_64_defconfig
+    make prepare DEFCONFIG=pc_x86_64_defconfig
     ```
 
 2.  **Build the image**:

@@ -33,8 +33,6 @@ function install_script {
   chmod +x "${BINARIES_DIR}/$1"
 }
 
-install_script swtpm-localca.conf
-install_script swtpm-profile.json
 install_script run-qemu.sh
 install_script run-tests.sh
 install_script test_tpm2_kselftest.exp
