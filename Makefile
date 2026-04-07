@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
+
 .PHONY: all prepare clean help
 .DEFAULT_GOAL := help
 
