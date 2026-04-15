@@ -6,7 +6,7 @@
 
 # Parameters
 BUILD ?= build
-DEFCONFIG ?= pc_x86_64_defconfig
+DEFCONFIG ?= pc_x86_64_efi_defconfig
 
 DEFCONFIG := $(CURDIR)/configs/$(DEFCONFIG)
 
