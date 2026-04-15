@@ -39,7 +39,6 @@ install_script run-qemu.sh
 install_script run-tests.sh
 install_script test_tpm2_kselftest.exp
 install_script test_tpm2_trusted.exp
-install_script test_rootns.exp
 
 OVMF_CODE_OUT="$BINARIES_DIR/OVMF_CODE.fd"
 OVMF_VARS_OUT="$BINARIES_DIR/OVMF_VARS.fd"
