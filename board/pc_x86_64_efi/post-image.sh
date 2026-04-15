@@ -11,10 +11,14 @@ echo "UUID: $UUID"
 
 BOARD_DIR="$(dirname "$0")"
 
-# grub2
-mkdir -p "${BINARIES_DIR}/efi-part/EFI/BOOT"
-sed "s/UUID_TMP/$UUID/g" "${BOARD_DIR}/grub.cfg" > \
-    "${BINARIES_DIR}/efi-part/EFI/BOOT/grub.cfg"
+# systemd-boot
+mkdir -p "${BINARIES_DIR}/efi-part/loader/entries"
+cp "${BOARD_DIR}/loader.conf" "${BINARIES_DIR}/efi-part/loader/loader.conf"
+sed "s/PARTUUID_TMP/$UUID/g" "${BOARD_DIR}/tpmdd-debug.conf.in" > \
+    "${BINARIES_DIR}/efi-part/loader/entries/tpmdd-debug.conf"
+sed "s/PARTUUID_TMP/$UUID/g" "${BOARD_DIR}/tpmdd.conf.in" > \
+    "${BINARIES_DIR}/efi-part/loader/entries/tpmdd.conf"
+rm -f "${BINARIES_DIR}/efi-part/loader/entries/buildroot.conf"
 
 # genimage
 sed "s/UUID_TMP/$UUID/g" "${BOARD_DIR}/genimage.cfg" > "${BINARIES_DIR}/genimage.cfg"
