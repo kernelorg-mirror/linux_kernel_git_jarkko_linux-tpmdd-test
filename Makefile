@@ -42,7 +42,7 @@ help: ## Show this help message.
 	@echo ""
 	@echo "Variables:"
 	@echo "  BUILD                build directory [default: build]"
-	@echo "  DEFCONFIG            defconfig [default: pc_x86_64_defconfig]"
+	@echo "  DEFCONFIG            defconfig [default: pc_x86_64_efi_defconfig]"
 
 prepare: $(CONFIG_STAMP) ## Download, unpack and configure BuildRoot.
 
