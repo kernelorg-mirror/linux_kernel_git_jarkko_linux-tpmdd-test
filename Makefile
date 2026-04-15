@@ -6,9 +6,7 @@
 
 # Parameters
 BUILD ?= build
-DEFCONFIG ?= pc_x86_64_efi_defconfig
-
-DEFCONFIG := $(CURDIR)/configs/$(DEFCONFIG)
+BR2_DEFCONFIG ?= configs/pc_x86_64_efi_defconfig
 
 BUILDROOT_VERSION	:= 2026.02
 BUILDROOT_SHA256	:= a98351d46dd3ed3201e426eda3e01ff938ccc4571ec7e04eb57939c85c4e8cb5
@@ -29,7 +27,7 @@ CONFIG_STAMP		:= $(BUILD_STAMP_DIR)/.configured
 
 DOWNLOAD_STAMP		:= $(BUILD_STAMP_DIR)/.downloaded
 
-MAKEOPTS := -C $(BUILD_SOURCE_DIR) O=$(abspath $(BUILD_BINARY_DIR)) BR2_EXTERNAL=$(abspath $(CURDIR)) V=0
+MAKEOPTS := -C $(BUILD_SOURCE_DIR) O=$(abspath $(BUILD_BINARY_DIR)) BR2_EXTERNAL=$(abspath $(CURDIR)) BR2_DEFCONFIG=$(abspath $(BR2_DEFCONFIG)) V=0
 
 all: $(BUILD_IMAGE_DIR)/disk.img ## Build the disk image.
 
@@ -42,7 +40,7 @@ help: ## Show this help message.
 	@echo ""
 	@echo "Variables:"
 	@echo "  BUILD                build directory [default: build]"
-	@echo "  DEFCONFIG            defconfig [default: pc_x86_64_efi_defconfig]"
+	@echo "  BR2_DEFCONFIG        defconfig [default: configs/pc_x86_64_efi_defconfig]"
 
 prepare: $(CONFIG_STAMP) ## Download, unpack and configure BuildRoot.
 
@@ -57,7 +55,7 @@ clean: ## Delete build artifacts.
 	rm -rf $(BUILD)
 
 $(CONFIG_STAMP): $(PATCH_STAMP)
-	$(MAKE) $(MAKEOPTS) BR2_DEFCONFIG=$(DEFCONFIG) defconfig
+	$(MAKE) $(MAKEOPTS) BR2_DEFCONFIG=$(abspath $(BR2_DEFCONFIG)) defconfig
 	@mkdir -p $(BUILD_BINARY_DIR)
 	@mkdir -p $(@D)
 	@touch $@
