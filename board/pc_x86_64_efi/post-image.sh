@@ -14,8 +14,6 @@ BOARD_DIR="$(dirname "$0")"
 # systemd-boot
 mkdir -p "${BINARIES_DIR}/efi-part/loader/entries"
 cp "${BOARD_DIR}/loader.conf" "${BINARIES_DIR}/efi-part/loader/loader.conf"
-sed "s/PARTUUID_TMP/$UUID/g" "${BOARD_DIR}/tpmdd-debug.conf.in" > \
-    "${BINARIES_DIR}/efi-part/loader/entries/tpmdd-debug.conf"
 sed "s/PARTUUID_TMP/$UUID/g" "${BOARD_DIR}/tpmdd.conf.in" > \
     "${BINARIES_DIR}/efi-part/loader/entries/tpmdd.conf"
 rm -f "${BINARIES_DIR}/efi-part/loader/entries/buildroot.conf"
@@ -30,16 +28,7 @@ sed -e "s|@IDENTITY_FILE@|$SSH_DIR/id-rsa|g" \
 <"${BOARD_DIR}/ssh_config.in" \
 >"${BINARIES_DIR}/ssh_config"
 
-function install_script {
-  sed \
-    -e "s|@BINARIES_DIR@|${BINARIES_DIR}|g" \
-    -e "s|@HOST_DIR@|${HOST_DIR}|g" \
-    <"${BOARD_DIR}/$1.in" \
-    >"${BINARIES_DIR}/$1"
-  chmod +x "${BINARIES_DIR}/$1"
-}
-
-install_script run-qemu.sh
+install -T -m 755 "${BOARD_DIR}/run-qemu.sh" "${BINARIES_DIR}/run-qemu.sh"
 
 OVMF_CODE_OUT="$BINARIES_DIR/OVMF_CODE.fd"
 OVMF_VARS_OUT="$BINARIES_DIR/OVMF_VARS.fd"

@@ -1,3 +1,0 @@
-title	tpmdd (debug, nokaslr)
-linux	/boot/bzImage
-options	root=PARTUUID=PARTUUID_TMP rootwait console=tty1 console=ttyS0 net.ifname=0 nokaslr tpm_tis.interrupts=0
