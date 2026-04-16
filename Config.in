@@ -1,4 +1,2 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
-
-source "$BR2_EXTERNAL_TPMDD_PATH/package/tpm2sh/Config.in"
