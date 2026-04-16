@@ -50,6 +50,8 @@ for pair in $OVMF_CANDIDATES; do
   if [ -f "$OVMF_CODE_IN" ] && [ -f "$OVMF_VARS_IN" ]; then
     break
   fi
+  OVMF_CODE_IN=
+  OVMF_VARS_IN=
 done
 
 if [ -z "$OVMF_CODE_IN" ] || [ -z "$OVMF_VARS_IN" ]; then

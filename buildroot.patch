@@ -1,8 +1,6 @@
-diff --git a/package/linux-tools/linux-tool-selftests.mk.in b/package/linux-tools/linux-tool-selftests.mk.in
-index 0bcc47af0a..6819b4905b 100644
---- a/package/linux-tools/linux-tool-selftests.mk.in
-+++ b/package/linux-tools/linux-tool-selftests.mk.in
-@@ -24,7 +24,8 @@ SELFTESTS_DEPENDENCIES = \
+--- a/package/linux-tools/linux-tool-selftests.mk.in	2026-03-04 10:11:17.000000000 +0200
++++ b/package/linux-tools/linux-tool-selftests.mk.in	2026-04-16 09:50:05.668768577 +0300
+@@ -24,7 +24,8 @@
  SELFTESTS_MAKE_FLAGS = \
  	$(LINUX_MAKE_FLAGS) \
  	ARCH=$(SELFTESTS_ARCH) \
@@ -10,5 +8,81 @@ index 0bcc47af0a..6819b4905b 100644
 +	KHDR_DIR=$(LINUX_DIR)/usr/include \
 +	SKIP_TARGETS="tc-testing"
  
- # O must be redefined here to overwrite the one used by Buildroot for
- # out of tree build. We build the selftests in $(LINUX_DIR)/tools/selftests and
+ LINUX_TOOLS_BIN_ARCH_EXCLUDE += \
+ 	/usr/lib/kselftests/tc-testing/
+--- a/boot/edk2/Config.in	2026-03-04 10:11:17.000000000 +0200
++++ b/boot/edk2/Config.in	2026-04-16 09:50:05.668768577 +0300
+@@ -77,6 +77,16 @@
+ 	  the Linux boot protocol. It can therefore be loaded by a
+ 	  previous bootloader like ARM Trusted Firmware or OP-TEE.
+ 
++config BR2_TARGET_EDK2_PLATFORM_RPI4
++	bool "Raspberry Pi 4"
++	depends on BR2_aarch64
++	select BR2_PACKAGE_EDK2_NON_OSI
++	help
++	  Platform configuration for Raspberry Pi 4 Model B,
++	  Raspberry Pi 400, and Compute Module 4 (BCM2711).
++
++	  https://github.com/tianocore/edk2-platforms/tree/master/Platform/RaspberryPi/RPi4
++
+ config BR2_TARGET_EDK2_PLATFORM_ARM_SGI575
+ 	bool "ARM SGI-575"
+ 	depends on BR2_aarch64
+@@ -155,6 +165,7 @@
+ 	default "BL33_AP_UEFI" if BR2_TARGET_EDK2_PLATFORM_ARM_SGI575
+ 	default "FVP_AARCH64_EFI" if BR2_TARGET_EDK2_PLATFORM_ARM_VEXPRESS_FVP_AARCH64
+ 	default "ARMADA_EFI" if BR2_TARGET_EDK2_PLATFORM_SOLIDRUN_ARMADA80X0MCBIN
++	default "RPI_EFI" if BR2_TARGET_EDK2_PLATFORM_RPI4
+ 
+ endif
+ 
+--- a/boot/edk2/edk2.mk	2026-03-04 10:11:17.000000000 +0200
++++ b/boot/edk2/edk2.mk	2026-04-16 09:53:27.208656270 +0300
+@@ -82,6 +82,14 @@
+ EDK2_PLATFORM_NAME = ArmVirtQemuKernel
+ EDK2_BUILD_DIR = $(EDK2_PLATFORM_NAME)-$(EDK2_ARCH)
+ 
++else ifeq ($(BR2_TARGET_EDK2_PLATFORM_RPI4),y)
++EDK2_ARCH = AARCH64
++EDK2_DEPENDENCIES += edk2-non-osi
++EDK2_PACKAGE_NAME = Platform/RaspberryPi/RPi4
++EDK2_PLATFORM_NAME = RPi4
++EDK2_BUILD_DIR = RPi4
++EDK2_PACKAGES_PATHS += $(STAGING_DIR)/usr/share/edk2-non-osi
++
+ else ifeq ($(BR2_TARGET_EDK2_PLATFORM_ARM_SGI575),y)
+ EDK2_ARCH = AARCH64
+ EDK2_PACKAGE_NAME = Platform/ARM/SgiPkg/Sgi575
+--- a/package/edk2-non-osi/edk2-non-osi.mk	2026-03-04 10:11:17.000000000 +0200
++++ b/package/edk2-non-osi/edk2-non-osi.mk	2026-04-16 09:53:38.892882890 +0300
+@@ -15,6 +15,11 @@
+ EDK2_NON_OSI_LICENSE_FILES += Silicon/Marvell/Armada7k8k/DeviceTree/Armada80x0McBin.inf
+ EDK2_NON_OSI_DIRS += Silicon/Marvell/Armada7k8k/DeviceTree
+
++# Copy RPi4 non-OSI files
++EDK2_NON_OSI_DIRS += Platform/RaspberryPi/RPi4/TrustedFirmware
++EDK2_NON_OSI_DIRS += Platform/RaspberryPi/Drivers/LogoDxe
++EDK2_NON_OSI_LICENSE_FILES += Platform/RaspberryPi/Drivers/LogoDxe/LogoDxe.inf
++
+ # There is nothing to build for edk2-non-osi. All we need to do is to copy
+ # the selected description files to staging, for other packages to build with.
+ define EDK2_NON_OSI_INSTALL_STAGING_CMDS
+--- a/package/systemd/Config.in	2026-03-04 10:11:17.000000000 +0200
++++ b/package/systemd/Config.in	2026-04-16 12:00:00.000000000 +0300
+@@ -112,7 +112,7 @@
+
+ config BR2_PACKAGE_SYSTEMD_BOOT
+ 	bool "systemd-boot"
+-	depends on BR2_i386 || BR2_x86_64
++	depends on BR2_i386 || BR2_x86_64 || BR2_aarch64
+ 	select BR2_PACKAGE_GNU_EFI
+ 	select BR2_PACKAGE_SYSTEMD_EFI
+ 	help
+@@ -160,6 +160,7 @@
+ config BR2_PACKAGE_SYSTEMD_BOOT_EFI_ARCH
+ 	string
+ 	default "ia32"  if BR2_i386
++	default "aa64"  if BR2_aarch64
+ 	default "x64"   if BR2_x86_64
+ 	depends on BR2_PACKAGE_SYSTEMD_BOOT
