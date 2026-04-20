@@ -6,7 +6,7 @@
  	ARCH=$(SELFTESTS_ARCH) \
 -	KHDR_DIR=$(LINUX_DIR)/usr/include
 +	KHDR_DIR=$(LINUX_DIR)/usr/include \
-+	SKIP_TARGETS="tc-testing"
++	TARGETS=tpm2
  
  LINUX_TOOLS_BIN_ARCH_EXCLUDE += \
  	/usr/lib/kselftests/tc-testing/
