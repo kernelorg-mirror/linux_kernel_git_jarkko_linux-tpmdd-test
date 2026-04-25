@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
 
-.PHONY: all prepare clean help
+.PHONY: all prepare burn clean help
 .DEFAULT_GOAL := help
 
 # Parameters
@@ -40,9 +40,21 @@ help: ## Show this help message.
 	@echo ""
 	@echo "Variables:"
 	@echo "  BUILD                build directory [default: build]"
+	@echo "  DEVICE:              device used for burning disk image"
 	@echo "  BR2_DEFCONFIG        defconfig [default: configs/pc_x86_64_efi_defconfig]"
 
 prepare: $(CONFIG_STAMP) ## Download, unpack and configure BuildRoot.
+
+burn: $(BUILD_IMAGE_DIR)/disk.img
+	@if [ -z "$(DEVICE)" ]; then \
+		echo "ERROR: DEVICE variable is not defined. Aborting burn."; \
+		exit 1; \
+	fi
+	@if [ ! -b "$(DEVICE)" ]; then \
+		echo "ERROR: DEVICE is not a block device. Aborting burn."; \
+		exit 1; \
+	fi
+	sudo dd if=$(BUILD_IMAGE_DIR)/disk.img of=$(DEVICE) bs=1M status=progress oflag=sync
 
 $(BUILD_IMAGE_DIR)/disk.img: $(CONFIG_STAMP)
 	$(MAKE) $(MAKEOPTS)
