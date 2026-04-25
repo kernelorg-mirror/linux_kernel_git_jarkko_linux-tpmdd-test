@@ -15,6 +15,15 @@ if [ ! -f "$SSH_DIR/id-rsa" ]; then
   chmod 600 "$SSH_DIR/authorized_keys"
 fi
 
+GETTY_WANTS_DIR="${TARGET_DIR}/etc/systemd/system/getty.target.wants"
+SERIAL_GETTY_WANTS_DIR="${TARGET_DIR}/etc/systemd/system/serial-getty.target.wants"
+
+mkdir -p "$GETTY_WANTS_DIR" "$SERIAL_GETTY_WANTS_DIR"
+ln -sf /usr/lib/systemd/system/getty@.service \
+  "${GETTY_WANTS_DIR}/getty@tty1.service"
+ln -sf /usr/lib/systemd/system/serial-getty@.service \
+  "${SERIAL_GETTY_WANTS_DIR}/serial-getty@ttyS0.service"
+
 # WiFi (optional: set WIRELESS_SSID and WIRELESS_PASSWORD env vars)
 if [ -n "$WIRELESS_SSID" ] && [ -n "$WIRELESS_PASSWORD" ]; then
   WPA_DIR="${TARGET_DIR}/etc/wpa_supplicant"
@@ -53,4 +62,12 @@ EOF
   mkdir -p "${TARGET_DIR}/etc/systemd/system/multi-user.target.wants"
   ln -sf /usr/lib/systemd/system/wpa_supplicant@.service \
     "${TARGET_DIR}/etc/systemd/system/multi-user.target.wants/wpa_supplicant@wlan0.service"
+fi
+
+FW_DIR="${TARGET_DIR}/lib/firmware/brcm"
+
+if [ -d "$FW_DIR" ] && [ -e "$FW_DIR/brcmfmac43456-sdio.bin" ]; then
+  ln -sf brcmfmac43456-sdio.bin "$FW_DIR/brcmfmac43456-sdio.raspberrypi,400.bin"
+  ln -sf brcmfmac43456-sdio.clm_blob "$FW_DIR/brcmfmac43456-sdio.raspberrypi,400.clm_blob"
+  ln -sf brcmfmac43456-sdio.txt "$FW_DIR/brcmfmac43456-sdio.raspberrypi,400.txt"
 fi

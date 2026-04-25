@@ -11,6 +11,7 @@ swtpm_conf_dir="$swtpm_dir/config"
 swtpm_localca_dir="$swtpm_dir/localca"
 
 function cleanup {
+  kill -- "$(cat "$swtpm_dir/swtpm.pid" 2>/dev/null)" 2>/dev/null || true
   if (( $(jobs -p | wc -l) > 0 )); then
     kill "$(jobs -p)"
   fi
@@ -101,6 +102,7 @@ fi
 swtpm socket \
   --tpmstate dir="$swtpm_state_dir" \
   --ctrl type=unixio,path="$swtpm_dir/swtpm-sock" \
+  --pid file="$swtpm_dir/swtpm.pid" \
   --log file=swtpm.log,level=20 ${SWTPM_TPM2} -d
 
 echo $$ > qemu.pid

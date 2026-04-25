@@ -4,6 +4,8 @@
 
 set -e
 
+export TPM2TOOLS_TCTI="${TPM2TOOLS_TCTI:-device:/dev/tpmrm0}"
+
 tpm2_createprimary -C o -G rsa2048 -g sha256 -c /tmp/primary.ctx
 tpm2_evictcontrol -C o -c /tmp/primary.ctx 0x81000001
 keyctl add trusted kmk 'new 32 keyhandle=0x81000001' @u

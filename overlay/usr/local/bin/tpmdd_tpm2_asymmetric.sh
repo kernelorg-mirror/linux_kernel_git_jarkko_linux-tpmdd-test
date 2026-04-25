@@ -6,6 +6,8 @@
 
 set -e
 
+export TPM2TOOLS_TCTI="${TPM2TOOLS_TCTI:-device:/dev/tpmrm0}"
+
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"; tpm2_clear' EXIT
 
