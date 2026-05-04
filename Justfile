@@ -3,41 +3,57 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-build         := env_var_or_default("BUILD", "build")
+build_dir               := env_var_or_default("BUILD", "build")
+buildroot_cache         := env_var_or_default("XDG_CACHE_HOME", env_var("HOME") / ".cache") / "buildroot"
+buildroot_package_dir   := buildroot_cache / "package"
 
-buildroot_version := "2026.02"
-buildroot_sha256  := "a98351d46dd3ed3201e426eda3e01ff938ccc4571ec7e04eb57939c85c4e8cb5"
-buildroot_tarball := "buildroot-" + buildroot_version + ".tar.gz"
-buildroot_url     := "https://buildroot.org/downloads/" + buildroot_tarball
+buildroot_version   := "8e786e873ac759b5804059e8ae750e51c3a006ca"
+buildroot_hash      := "14bca416698d21e57f03eecf491339679ac8446839f9b23af172c56acd81acff"
+buildroot_tarball   := "buildroot-" + buildroot_version + ".tar.gz"
+buildroot_site      := "https://github.com/buildroot/buildroot/archive" / (buildroot_version + ".tar.gz")
 
-base_dir     := build / "buildroot"
-binary_dir   := base_dir / "build"
-download_dir := base_dir / "download"
-image_dir    := base_dir / "build" / "images"
-source_dir   := base_dir / "src" / ("buildroot-" + buildroot_version)
-stamp_dir    := base_dir / "stamp"
-
-download_stamp := stamp_dir / ".downloaded"
-verify_stamp   := stamp_dir / ".verified"
-unpack_stamp   := stamp_dir / ".unpacked"
-patch_stamp    := stamp_dir / ".patched"
-prepare_stamp  := stamp_dir / ".prepared"
+download_dir := build_dir / "download"
+source_dir   := build_dir / "src" / ("buildroot-" + buildroot_version)
+stamp_dir    := build_dir / "stamp"
+target_file  := build_dir / "target"
+ 
+download_stamp  := stamp_dir / ".downloaded"
+verify_stamp    := stamp_dir / ".verified"
+unpack_stamp    := stamp_dir / ".unpacked"
+patch_stamp     := stamp_dir / ".patched"
+configure_stamp := stamp_dir / ".prepared"
 
 # List available recipes.
 default:
     @just --list --unsorted
 
-# Download and configure Buildroot.
-prepare defconfig: patch
-    @if [ -f "{{ prepare_stamp }}" ]; then exit 0; fi;
-    make -C "{{ source_dir }}" \
-        O="{{ absolute_path(binary_dir) }}" \
+# Configure build target
+configure target: patch
+    @if [ -f "{{ configure_stamp }}" ] && [ -f "{{ target_file }}" ] && \
+       read -r prev < "{{ target_file }}" && [ "$prev" = "{{ target }}" ]; then exit 0; \
+    fi; \
+    rm -vf "{{ configure_stamp }}"; \
+    rm -vf "{{ target_file }}"; \
+    path_abs="{{ absolute_path(build_dir) }}/{{ target }}"; \
+    mkdir -p "$path_abs"; \
+    make -C "{{source_dir}}" O="$path_abs" \
         BR2_EXTERNAL="{{ justfile_directory() }}" \
-        BR2_DEFCONFIG="{{ absolute_path(defconfig) }}" \
-        V=0 defconfig
-    mkdir -p "{{ binary_dir }}"; \
-    mkdir -p "{{ stamp_dir }}"; \
-    touch "{{ prepare_stamp }}"
+        BR2_DL_DIR="{{ buildroot_package_dir }}" \
+        {{ target }}_defconfig; \
+    printf '%s\n' "{{ target }}" > "{{ target_file }}"; \
+    touch "{{ configure_stamp }}"
+
+# Build the disk image.
+build:
+    @if [ ! -f "{{ configure_stamp }}" ]; then \
+        echo "ERROR: prepare first." >&2; \
+        exit 1; \
+    fi
+    read -r target < "{{ target_file }}"; \
+    make BR2_DL_DIR="{{ buildroot_package_dir }}" \
+        -C "{{ source_dir }}" O="{{ absolute_path(build_dir) }}/$target" \
+        BR2_EXTERNAL="{{ justfile_directory() }}" \
+        V=0
 
 # Burn the disk image.
 burn device: build
@@ -45,30 +61,16 @@ burn device: build
         echo "ERROR: {{ device }} is not a block device." >&2; \
         exit 1; \
     fi
-    sudo dd if="{{ image_dir }}/disk.img" of="{{ device }}" bs=1M status=progress oflag=sync
-
-# Build the disk image.
-build:
-    @if [ ! -f "{{ prepare_stamp }}" ]; then \
-        echo "ERROR: prepare first." >&2; \
-        exit 1; \
-    fi
-    make -C "{{ source_dir }}" \
-        O="{{ absolute_path(binary_dir) }}" \
-        BR2_EXTERNAL="{{ justfile_directory() }}" \
-        V=0
+    read -r target < "{{ target_file }}"; \
+    sudo dd if="{{ absolute_path(build_dir) }}/$target/images/disk.img" of="{{ device }}" bs=1M status=progress oflag=sync
 
 # Delete build artifacts.
 clean:
-    @case "{{ build }}" in \
-        ""|/|/*) echo "ERROR: BUILD is unsafe ('{{ build }}'). Aborting clean." >&2; exit 1 ;; \
-    esac
-    rm -rf "{{ build }}"
+    rm -rf "{{ build_dir }}"
 
 [private]
 patch: unpack
     @if [ -f "{{ patch_stamp }}" ]; then exit 0; fi; \
-    echo "Patching Buildroot"; \
     patch -p1 -d "{{ source_dir }}" < "{{ justfile_directory() }}/buildroot.patch"; \
     mkdir -p "{{ stamp_dir }}"; \
     touch "{{ patch_stamp }}"
@@ -76,7 +78,6 @@ patch: unpack
 [private]
 unpack: verify
     @if [ -f "{{ unpack_stamp }}" ]; then exit 0; fi; \
-    echo "Unpacking Buildroot"; \
     mkdir -p "{{ source_dir }}"; \
     tar -xf "{{ download_dir }}/{{ buildroot_tarball }}" --strip-components=1 -C "{{ source_dir }}"; \
     mkdir -p "{{ stamp_dir }}"; \
@@ -85,16 +86,14 @@ unpack: verify
 [private]
 verify: download
     @if [ -f "{{ verify_stamp }}" ]; then exit 0; fi; \
-    echo "Verifying Buildroot"; \
-    echo "{{ buildroot_sha256 }}  {{ download_dir }}/{{ buildroot_tarball }}" | sha256sum --status -c -; \
+    echo "{{ buildroot_hash }}  {{ download_dir }}/{{ buildroot_tarball }}" | sha256sum --status -c -; \
     mkdir -p "{{ stamp_dir }}"; \
     touch "{{ verify_stamp }}"
 
 [private]
 download:
     @if [ -f "{{ download_stamp }}" ]; then exit 0; fi; \
-    echo "Downloading Buildroot"; \
     mkdir -p "{{ download_dir }}"; \
-    wget -q --show-progress -O "{{ download_dir }}/{{ buildroot_tarball }}" "{{ buildroot_url }}"; \
+    wget -q --show-progress -O "{{ download_dir }}/{{ buildroot_tarball }}" "{{ buildroot_site }}"; \
     mkdir -p "{{ stamp_dir }}"; \
     touch "{{ download_stamp }}"
