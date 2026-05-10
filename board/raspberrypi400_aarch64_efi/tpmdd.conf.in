@@ -1,3 +1,3 @@
 title	tpmdd
 linux	/boot/Image
-options	root=PARTUUID=PARTUUID_TMP rootfstype=ext4 rootwait rootdelay=5 sdhci.debug_quirks2=0x4 efi=debug earlycon=uart8250,mmio32,0xfe215040 keep_bootcon console=tty1 console=ttyS0,115200 net.ifname=0 nokaslr
+options	root=PARTUUID=PARTUUID_TMP rootfstype=ext4 rootwait rootdelay=5 sdhci.debug_quirks2=0x4 efi=debug earlycon=uart8250,mmio32,0xfe215040 keep_bootcon console=tty1 console=ttyS0,115200 net.ifnames=0 nokaslr
