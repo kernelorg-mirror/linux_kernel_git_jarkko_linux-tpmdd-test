@@ -1,0 +1,12 @@
+--- a/package/linux-tools/linux-tool-selftests.mk.in	2026-03-04 10:11:17.000000000 +0200
++++ b/package/linux-tools/linux-tool-selftests.mk.in	2026-04-16 09:50:05.668768577 +0300
+@@ -24,7 +24,8 @@
+ SELFTESTS_MAKE_FLAGS = \
+ 	$(LINUX_MAKE_FLAGS) \
+ 	ARCH=$(SELFTESTS_ARCH) \
+-	KHDR_DIR=$(LINUX_DIR)/usr/include
++	KHDR_DIR=$(LINUX_DIR)/usr/include \
++	TARGETS=tpm2
+ 
+ LINUX_TOOLS_BIN_ARCH_EXCLUDE += \
+ 	/usr/lib/kselftests/tc-testing/
