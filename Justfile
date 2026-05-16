@@ -7,7 +7,7 @@ buildroot_version := "8e786e873ac759b5804059e8ae750e51c3a006ca"
 buildroot_hash    := "14bca416698d21e57f03eecf491339679ac8446839f9b23af172c56acd81acff"
 buildroot_site    := "https://github.com/buildroot/buildroot/archive" / (buildroot_version + ".tar.gz")
 
-cache_dir         := cache_directory() / "linux-tpmdd-test"
+cache_dir         := cache_directory() / "tpmdd"
 download_dir      := cache_dir / "download"
 ccache_dir        := cache_dir / "ccache"
 build_dir         := env_var_or_default("BUILD", "build")
