@@ -4,7 +4,7 @@
 
 1.  **Configure the project** (only needed for the first build):
     ```
-    just prepare configs/pc_x86_64_efi_defconfig
+    just prepare configs/tpmdd_amd64_defconfig
     ```
 
 2.  **Build the image**:
