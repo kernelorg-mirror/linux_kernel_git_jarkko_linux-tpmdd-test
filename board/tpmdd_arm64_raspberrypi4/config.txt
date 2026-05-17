@@ -2,7 +2,7 @@
 # Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
 
 arm_64bit=1
-armstub=RPI_EFI.fd
+kernel=u-boot.bin
 enable_uart=1
 uart_2ndstage=1
 core_freq=250

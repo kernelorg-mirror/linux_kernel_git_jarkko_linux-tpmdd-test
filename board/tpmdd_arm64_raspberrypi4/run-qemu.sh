@@ -55,6 +55,12 @@ if $opt_serial_socket; then
   extra_args+=("-serial" "unix:serial.sock,server,wait")
 fi
 
+if $opt_graphics; then
+  extra_args+=("-append" "root=/dev/vda2 rootfstype=ext4 rootwait console=tty1 console=ttyAMA0,115200")
+else
+  extra_args+=("-append" "root=/dev/vda2 rootfstype=ext4 rootwait console=ttyAMA0,115200")
+fi
+
 mkdir -p "$swtpm_state_dir" "$swtpm_conf_dir" "$swtpm_localca_dir"
 chmod 700 "$swtpm_state_dir" "$swtpm_localca_dir"
 
@@ -115,6 +121,5 @@ exec qemu-system-aarch64 \
   -chardev socket,id=chrtpm,path="$swtpm_dir"/swtpm-sock \
   -tpmdev emulator,id=tpm0,chardev=chrtpm \
   -device ${QEMU_TPM_DEVICE},tpmdev=tpm0 \
-  -drive if=pflash,format=raw,file="$PWD/AAVMF_CODE.fd",readonly=on \
-  -drive if=pflash,format=raw,file="$PWD/AAVMF_VARS.fd" \
+  -kernel Image \
   "${extra_args[@]}"
