@@ -3,8 +3,8 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-buildroot_version := "8e786e873ac759b5804059e8ae750e51c3a006ca"
-buildroot_hash    := "14bca416698d21e57f03eecf491339679ac8446839f9b23af172c56acd81acff"
+buildroot_version := "668b47bdab0bf4010a95187fed48b1489bace5c2"
+buildroot_hash    := "33084f85d2b499917c27c323d8d85a5caced247cb38640cbff0d330bc784e894"
 buildroot_site    := "https://github.com/buildroot/buildroot/archive" / (buildroot_version + ".tar.gz")
 
 buildroot_cache         := cache_directory() / "tpmdd" / "buildroot"
