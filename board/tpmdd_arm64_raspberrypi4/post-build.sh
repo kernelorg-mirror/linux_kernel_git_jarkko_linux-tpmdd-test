@@ -4,6 +4,9 @@
 
 set -e
 
+BOARD_DIR="$(dirname "$0")"
+source "${BOARD_DIR}/rpi-variant"
+
 SSH_DIR="${TARGET_DIR}/root/.ssh"
 echo "SSH_DIR=$SSH_DIR"
 
@@ -66,8 +69,8 @@ fi
 
 FW_DIR="${TARGET_DIR}/lib/firmware/brcm"
 
-if [ -d "$FW_DIR" ] && [ -e "$FW_DIR/brcmfmac43456-sdio.bin" ]; then
-  ln -sf brcmfmac43456-sdio.bin "$FW_DIR/brcmfmac43456-sdio.raspberrypi,400.bin"
-  ln -sf brcmfmac43456-sdio.clm_blob "$FW_DIR/brcmfmac43456-sdio.raspberrypi,400.clm_blob"
-  ln -sf brcmfmac43456-sdio.txt "$FW_DIR/brcmfmac43456-sdio.raspberrypi,400.txt"
+if [ -e "$FW_DIR/brcmfmac43456-sdio.bin" ]; then
+  ln -sf brcmfmac43456-sdio.bin "$FW_DIR/brcmfmac43456-sdio.$RPI_WIFI_COMPAT.bin"
+  ln -sf brcmfmac43456-sdio.clm_blob "$FW_DIR/brcmfmac43456-sdio.$RPI_WIFI_COMPAT.clm_blob"
+  ln -sf brcmfmac43456-sdio.txt "$FW_DIR/brcmfmac43456-sdio.$RPI_WIFI_COMPAT.txt"
 fi

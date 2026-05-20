@@ -10,13 +10,14 @@ UUID=$(dumpe2fs "$BINARIES_DIR/rootfs.ext2" 2>/dev/null | \
 echo "UUID: $UUID"
 
 BOARD_DIR="$(dirname "$0")"
+source "${BOARD_DIR}/rpi-variant"
 
 # U-Boot
-sed "s/PARTUUID_TMP/$UUID/g" "${BOARD_DIR}/boot.cmd" > "${BINARIES_DIR}/boot.cmd"
+sed -e "s/PARTUUID_TMP/$UUID/g" -e "s/DTB_TMP/$RPI_DTB/g" "${BOARD_DIR}/boot.cmd" > "${BINARIES_DIR}/boot.cmd"
 mkimage -C none -A arm64 -T script -d "${BINARIES_DIR}/boot.cmd" "${BINARIES_DIR}/boot.scr"
 
 # genimage
-sed "s/UUID_TMP/$UUID/g" "${BOARD_DIR}/genimage.cfg" > "${BINARIES_DIR}/genimage.cfg"
+sed -e "s/UUID_TMP/$UUID/g" -e "s/DTB_TMP/$RPI_DTB/g" "${BOARD_DIR}/genimage.cfg" > "${BINARIES_DIR}/genimage.cfg"
 support/scripts/genimage.sh -c "$BINARIES_DIR/genimage.cfg"
 
 SSH_DIR="${TARGET_DIR}/root/.ssh"

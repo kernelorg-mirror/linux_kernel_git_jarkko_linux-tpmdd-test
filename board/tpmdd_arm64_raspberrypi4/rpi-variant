@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
+#
+# Raspberry Pi 4 variant selection.
+# Set RPI_VARIANT env var to override: rpi4b (default) or rpi400.
+
+RPI_VARIANT="${RPI_VARIANT:-rpi4b}"
+
+case "$RPI_VARIANT" in
+	rpi4b)
+		RPI_DTB="bcm2711-rpi-4-b.dtb"
+		RPI_WIFI_COMPAT="raspberrypi,4-model-b"
+		;;
+	rpi400)
+		RPI_DTB="bcm2711-rpi-400.dtb"
+		RPI_WIFI_COMPAT="raspberrypi,400"
+		;;
+	*)
+		echo "Unknown RPI_VARIANT: $RPI_VARIANT" >&2
+		exit 1
+		;;
+esac
