@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
 #
-# Raspberry Pi 4 variant selection.
-# Set RPI_VARIANT env var to override: rpi4b (default) or rpi400.
+# Raspberry Pi 400 variant selection.
+# Set RPI_VARIANT env var to override: rpi400 (default) or rpi4b.
 
-RPI_VARIANT="${RPI_VARIANT:-rpi4b}"
+RPI_VARIANT="${RPI_VARIANT:-rpi400}"
 
 case "$RPI_VARIANT" in
 	rpi4b)
