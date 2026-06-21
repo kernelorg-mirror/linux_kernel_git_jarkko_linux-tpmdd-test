@@ -25,7 +25,7 @@ list:
 configure target: (dependencies target) (patch target)
   @path_abs="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}"; \
   stamp_dir="$path_abs/stamp"; \
-  configure_stamp="$stamp_dir/.configured"; \
+  configure_stamp="$stamp_dir/configure"; \
   if [ -f "$configure_stamp" ]; then exit 0; fi; \
   mkdir -p "$path_abs" "$stamp_dir"; \
   make -C "$path_abs/src/buildroot-{{ buildroot_version }}" O="$path_abs" \
@@ -57,7 +57,7 @@ clean:
 
 [private]
 download target:
-  @stamp="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}/stamp/.downloaded"; \
+  @stamp="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}/stamp/download"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   mkdir -p "{{ buildroot_cache }}" "{{ buildroot_download_dir }}"; \
   if [ ! -f "{{ buildroot_tarball }}" ]; then \
@@ -69,7 +69,7 @@ download target:
 
 [private]
 verify target: (download target)
-  @stamp="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}/stamp/.verified"; \
+  @stamp="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}/stamp/verify"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   echo "{{ buildroot_hash }}  {{ buildroot_tarball }}" | sha256sum --status -c -; \
   mkdir -p "$(dirname "$stamp")"; \
@@ -80,7 +80,7 @@ unpack target: (verify target)
   @path_abs="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}"; \
   src_dir="$path_abs/src/buildroot-{{ buildroot_version }}"; \
   stamp_dir="$path_abs/stamp"; \
-  stamp="$stamp_dir/.unpacked"; \
+  stamp="$stamp_dir/unpack"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   mkdir -p "$src_dir"; \
   tar -xf "{{ buildroot_tarball }}" --strip-components=1 -C "$src_dir"; \
@@ -92,7 +92,7 @@ patch target: (unpack target)
   @path_abs="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}"; \
   src_dir="$path_abs/src/buildroot-{{ buildroot_version }}"; \
   stamp_dir="$path_abs/stamp"; \
-  stamp="$stamp_dir/.patched"; \
+  stamp="$stamp_dir/patch"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   patches_dir="{{ justfile_directory() }}/patches/buildroot"; \
   if [ -d "$patches_dir" ]; then \
