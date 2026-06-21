@@ -24,15 +24,14 @@ list:
 # Configure target.
 configure target: (dependencies target) (patch target)
   @path_abs="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}"; \
-  stamp_dir="$path_abs/stamp"; \
-  configure_stamp="$stamp_dir/configure"; \
-  if [ -f "$configure_stamp" ]; then exit 0; fi; \
-  mkdir -p "$path_abs" "$stamp_dir"; \
+  stamp="$(just _stamp {{ target }} configure)"; \
+  if [ -f "$stamp" ]; then exit 0; fi; \
+  mkdir -p "$path_abs" "$(dirname "$stamp")"; \
   make -C "$path_abs/src/buildroot-{{ buildroot_version }}" O="$path_abs" \
     BR2_EXTERNAL="{{ justfile_directory() }}" \
     BR2_DL_DIR="{{ buildroot_download_dir }}" \
     {{ target }}_defconfig; \
-  touch "$configure_stamp"
+  touch "$stamp"
 
 # Build target.
 build target: (configure target)
@@ -57,7 +56,7 @@ clean:
 
 [private]
 download target:
-  @stamp="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}/stamp/download"; \
+  @stamp="$(just _stamp {{ target }} download)"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   mkdir -p "{{ buildroot_cache }}" "{{ buildroot_download_dir }}"; \
   if [ ! -f "{{ buildroot_tarball }}" ]; then \
@@ -69,7 +68,7 @@ download target:
 
 [private]
 verify target: (download target)
-  @stamp="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}/stamp/verify"; \
+  @stamp="$(just _stamp {{ target }} verify)"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   echo "{{ buildroot_hash }}  {{ buildroot_tarball }}" | sha256sum --status -c -; \
   mkdir -p "$(dirname "$stamp")"; \
@@ -79,20 +78,18 @@ verify target: (download target)
 unpack target: (verify target)
   @path_abs="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}"; \
   src_dir="$path_abs/src/buildroot-{{ buildroot_version }}"; \
-  stamp_dir="$path_abs/stamp"; \
-  stamp="$stamp_dir/unpack"; \
+  stamp="$(just _stamp {{ target }} unpack)"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   mkdir -p "$src_dir"; \
   tar -xf "{{ buildroot_tarball }}" --strip-components=1 -C "$src_dir"; \
-  mkdir -p "$stamp_dir"; \
+  mkdir -p "$(dirname "$stamp")"; \
   touch "$stamp"
 
 [private]
 patch target: (unpack target)
   @path_abs="{{ justfile_directory() }}/{{ build_dir }}/{{ target }}"; \
   src_dir="$path_abs/src/buildroot-{{ buildroot_version }}"; \
-  stamp_dir="$path_abs/stamp"; \
-  stamp="$stamp_dir/patch"; \
+  stamp="$(just _stamp {{ target }} patch)"; \
   if [ -f "$stamp" ]; then exit 0; fi; \
   patches_dir="{{ justfile_directory() }}/patches/buildroot"; \
   if [ -d "$patches_dir" ]; then \
@@ -101,7 +98,7 @@ patch target: (unpack target)
       patch -d "$src_dir" -p1 -i "$p"; \
     done; \
   fi; \
-  mkdir -p "$stamp_dir"; \
+  mkdir -p "$(dirname "$stamp")"; \
   touch "$stamp"
 
 [private]
@@ -110,3 +107,8 @@ dependencies target:
     echo "error: missing configs/{{ target }}_defconfig" >&2; \
     exit 1; \
   fi
+
+# Stamp file path for a target stage.
+[private]
+_stamp target name:
+  @echo "{{ justfile_directory() / build_dir / target / "stamp" / name }}"
