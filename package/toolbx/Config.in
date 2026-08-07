@@ -1,0 +1,36 @@
+config BR2_PACKAGE_TOOLBX
+	bool "toolbx"
+	depends on BR2_x86_64 || BR2_aarch64
+	depends on BR2_INIT_SYSTEMD
+	depends on BR2_USE_MMU  # podman
+	depends on BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS  # host-go
+	depends on BR2_PACKAGE_HOST_GO_TARGET_CGO_LINKING_SUPPORTS
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS  # podman
+	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS  # podman
+	depends on BR2_PACKAGE_LIBSECCOMP_ARCH_SUPPORTS  # podman
+	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_4_14  # podman
+	depends on BR2_TOOLCHAIN_HAS_THREADS  # podman
+	depends on BR2_USE_WCHAR  # podman
+	depends on !BR2_TOOLCHAIN_USES_UCLIBC
+	depends on !BR2_STATIC_LIBS
+	select BR2_PACKAGE_HOST_GO
+	select BR2_PACKAGE_PODMAN
+	help
+	  Toolbx provides interactive command-line environments for
+	  development and troubleshooting without installing software on
+	  the host. It is built on Podman and standard OCI technologies.
+
+	  https://containertoolbx.org/
+
+comment "toolbx needs systemd and a glibc/musl toolchain w/ headers >= 4.14, threads, wchar, dynamic library"
+	depends on BR2_x86_64 || BR2_aarch64
+	depends on BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
+	depends on BR2_PACKAGE_HOST_GO_TARGET_CGO_LINKING_SUPPORTS
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS
+	depends on BR2_PACKAGE_LIBSECCOMP_ARCH_SUPPORTS
+	depends on BR2_USE_MMU
+	depends on !BR2_INIT_SYSTEMD || \
+		!BR2_TOOLCHAIN_HEADERS_AT_LEAST_4_14 || \
+		!BR2_TOOLCHAIN_HAS_THREADS || !BR2_USE_WCHAR || \
+		BR2_TOOLCHAIN_USES_UCLIBC || BR2_STATIC_LIBS

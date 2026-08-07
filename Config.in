@@ -3,3 +3,4 @@
 
 source "$BR2_EXTERNAL_TPMDD_PATH/package/rpi400_bcm43456_firmware/Config.in"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/rpi-uefi/Config.in"
+source "$BR2_EXTERNAL_TPMDD_PATH/package/toolbx/Config.in"
