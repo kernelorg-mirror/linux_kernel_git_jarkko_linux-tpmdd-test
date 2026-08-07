@@ -1,0 +1,98 @@
+From e641f374998f06f015f39bec07299062f2ef6c65 Mon Sep 17 00:00:00 2001
+From: Josh Hoffer <jhoffer@anduril.com>
+Date: Wed, 3 Jun 2026 17:19:33 -0700
+Subject: [PATCH] boot/stub: honor PE SectionAlignment when loading inner
+ kernel
+
+The stub copies the embedded kernel PE into an xmalloc_pages()
+allocation with AllocateAnyPages, which only guarantees EFI_PAGE_SIZE
+(4 KiB) alignment.
+
+The arm64 kernel declares SectionAlignment = SZ_64K. When _text is not
+64K-aligned the kernel's EFI stub reallocates and copies the image,
+which can fail with EFI_OUT_OF_RESOURCES on memory-constrained firmware.
+
+Plumb SectionAlignment through pe_kernel_info() and allocate via
+xmalloc_aligned_pages(). For alignment <= EFI_PAGE_SIZE (e.g. x86_64) it
+reduces to a plain AllocatePages().
+
+Upstream: https://github.com/systemd/systemd/commit/e641f374998f06f015f39bec07299062f2ef6c65
+---
+ src/boot/boot.c  |  3 ++-
+ src/boot/linux.c | 18 +++++++++++++-----
+ src/boot/pe.c    | 22 +++++++++++++++++++++-
+ src/boot/pe.h    |  8 +++++++-
+ 4 files changed, 43 insertions(+), 8 deletions(-)
+
+diff --git a/src/boot/boot.c b/src/boot/boot.c
+--- a/src/boot/boot.c
++++ b/src/boot/boot.c
+@@ -2724 +2724,2 @@
+-                                     /* ret_image_base= */ NULL, /* ret_size_in_memory= */ NULL);
++                                     /* ret_image_base= */ NULL, /* ret_size_in_memory= */ NULL,
++                                     /* ret_section_alignment= */ NULL);
+diff --git a/src/boot/linux.c b/src/boot/linux.c
+--- a/src/boot/linux.c
++++ b/src/boot/linux.c
+@@ -171 +171 @@
+-        uint32_t compat_entry_point, entry_point;
++        uint32_t compat_entry_point, entry_point, section_alignment;
+@@ -179 +179 @@
+-        err = pe_kernel_info(kernel->iov_base, &entry_point, &compat_entry_point, &image_base, &kernel_size_in_memory);
++        err = pe_kernel_info(kernel->iov_base, &entry_point, &compat_entry_point, &image_base, &kernel_size_in_memory, &section_alignment);
+@@ -266,3 +266,11 @@
+-        /* Do we need to ensure under 4gb address on x86? */
+-        _cleanup_pages_ Pages loaded_kernel_pages = xmalloc_pages(
+-                        AllocateAnyPages, EfiLoaderCode, EFI_SIZE_TO_PAGES(kernel_size_in_memory), 0);
++        /* Honor the PE SectionAlignment (SZ_64K on arm64): if _text is not aligned the kernel's EFI stub
++         * reallocates and copies the image, which can fail with EFI_OUT_OF_RESOURCES on memory-constrained
++         * firmware. When alignment <= EFI_PAGE_SIZE (e.g. x86_64) xmalloc_aligned_pages() reduces to a
++         * plain AllocatePages() with no extra over-allocation. pe_kernel_info() already sanitized a
++         * non-conforming SectionAlignment to plain page alignment. */
++        _cleanup_pages_ Pages loaded_kernel_pages = xmalloc_aligned_pages(
++                        AllocateAnyPages,
++                        EfiLoaderCode,
++                        EFI_SIZE_TO_PAGES(kernel_size_in_memory),
++                        section_alignment,
++                        /* addr= */ 0);
+diff --git a/src/boot/pe.c b/src/boot/pe.c
+--- a/src/boot/pe.c
++++ b/src/boot/pe.c
+@@ -465 +465,7 @@
+-EFI_STATUS pe_kernel_info(const void *base, uint32_t *ret_entry_point, uint32_t *ret_compat_entry_point, uint64_t *ret_image_base, size_t *ret_size_in_memory) {
++EFI_STATUS pe_kernel_info(
++                const void *base,
++                uint32_t *ret_entry_point,
++                uint32_t *ret_compat_entry_point,
++                uint64_t *ret_image_base,
++                size_t *ret_size_in_memory,
++                uint32_t *ret_section_alignment) {
+@@ -491,0 +498,10 @@
++        /* Honoring SectionAlignment lets callers place the image so the kernel's EFI stub need not relocate
++         * it (SZ_64K on arm64). The PE spec requires a power of 2; for a non-conforming value fall back to
++         * plain page alignment (what we assumed before honoring this field) rather than propagate something
++         * that would break the allocator's over-alignment math. */
++        uint32_t section_alignment = pe->OptionalHeader.SectionAlignment;
++        if (!ISPOWEROF2(section_alignment)) {
++                log_warning_status(EFI_SUCCESS, "PE SectionAlignment %" PRIu32 " is not a power of 2, falling back to page alignment.", section_alignment);
++                section_alignment = EFI_PAGE_SIZE;
++        }
++
+@@ -504,0 +521,2 @@
++                if (ret_section_alignment)
++                        *ret_section_alignment = section_alignment;
+@@ -520,0 +539,2 @@
++        if (ret_section_alignment)
++                *ret_section_alignment = section_alignment;
+diff --git a/src/boot/pe.h b/src/boot/pe.h
+--- a/src/boot/pe.h
++++ b/src/boot/pe.h
+@@ -60 +60,7 @@
+-EFI_STATUS pe_kernel_info(const void *base, uint32_t *ret_entry_point, uint32_t *ret_compat_entry_point, uint64_t *ret_image_base, size_t *ret_size_in_memory);
++EFI_STATUS pe_kernel_info(
++                const void *base,
++                uint32_t *ret_entry_point,
++                uint32_t *ret_compat_entry_point,
++                uint64_t *ret_image_base,
++                size_t *ret_size_in_memory,
++                uint32_t *ret_section_alignment);
