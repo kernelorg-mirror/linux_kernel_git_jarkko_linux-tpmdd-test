@@ -7,31 +7,33 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 
 # Versions
-BUILDROOT_VERSION ?= 2026.05
+BUILDROOT_VERSION ?= 2026.05.1
 
 # URLs and hashes
-BUILDROOT_HASH ?= 9d2f3af10fcac763a61ff6e41894a033f9ecf9267ba13dd0912eedcd3be2b22a
+BUILDROOT_HASH ?= ae7f706f087b9ae9083a10a587368dfbf53103c28bf81c2d690198dc4090cb58
 BUILDROOT_URL  ?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
 
 # Directories
 BUILD_DIR    ?= build
 BOARD_DIR    := $(abspath $(BUILD_DIR)/$(BOARD))
 STAMP_DIR    := $(BOARD_DIR)/stamp
-CACHE_DIR    := $(HOME)/.cache/tpmdd/buildroot
+CACHE_DIR    := $(HOME)/.cache/tpmdd
 DOWNLOAD_DIR := $(CACHE_DIR)/download
+CCACHE_DIR   := $(CACHE_DIR)/ccache
 
 # Stamps
 VERIFY_STAMP := $(STAMP_DIR)/$(BUILDROOT_VERSION)/verify
-UNPACK_STAMP := $(STAMP_DIR)/$(BUILDROOT_VERSION)/unpack
 PATCH_STAMP  := $(STAMP_DIR)/$(BUILDROOT_VERSION)/patch
 
 # Artifacts
 BUILDROOT_TARBALL := $(DOWNLOAD_DIR)/buildroot-$(BUILDROOT_VERSION).tar.xz
+BUILDROOT_PATCH   := $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
 
 # Buildroot invocation helper
 define buildroot
   make -C "$(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)" O="$(BOARD_DIR)" \
     BR2_EXTERNAL="$(CURDIR)" BR2_DL_DIR="$(DOWNLOAD_DIR)" \
+    BR2_CCACHE_DIR="$(CCACHE_DIR)" \
     $(1)
 endef
 
@@ -62,25 +64,12 @@ $(VERIFY_STAMP): $(BUILDROOT_TARBALL)
 	mkdir -p "$(dir $@)"
 	touch "$@"
 
-$(UNPACK_STAMP): $(VERIFY_STAMP)
-	@path_abs="$(BOARD_DIR)"
-	src_dir="$$path_abs/src/buildroot-$(BUILDROOT_VERSION)"
+$(PATCH_STAMP): $(VERIFY_STAMP) $(BUILDROOT_PATCH)
+	@src_dir="$(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)"
 	rm -rf "$$src_dir"
 	mkdir -p "$$src_dir"
 	tar -xf "$(BUILDROOT_TARBALL)" --strip-components=1 -C "$$src_dir"
-	mkdir -p "$(dir $@)"
-	touch "$@"
-
-$(PATCH_STAMP): $(UNPACK_STAMP)
-	@path_abs="$(BOARD_DIR)"
-	src_dir="$$path_abs/src/buildroot-$(BUILDROOT_VERSION)"
-	patches_dir="$(CURDIR)/patches/buildroot"
-	if [ -d "$$patches_dir" ]; then
-		for p in "$$patches_dir"/*.patch; do
-			[ -f "$$p" ] || continue
-			patch -d "$$src_dir" -p1 -i "$$p"
-		done
-	fi
+	patch -d "$$src_dir" -p1 -i "$(BUILDROOT_PATCH)"
 	mkdir -p "$(dir $@)"
 	touch "$@"
 
