@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
 
-source "$BR2_EXTERNAL_TPMDD_PATH/package/rpi400_bcm43456_firmware/Config.in"
-source "$BR2_EXTERNAL_TPMDD_PATH/package/rpi-uefi/Config.in"
+config BR2_TPMDD_LIVE_IMAGE
+	bool
+	default y
+	select BR2_PACKAGE_HOST_DRACUT
+
+menu "TPMDD packages"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/toolbx/Config.in"
+source "$BR2_EXTERNAL_TPMDD_PATH/package/rpi-uefi/Config.in"
+endmenu

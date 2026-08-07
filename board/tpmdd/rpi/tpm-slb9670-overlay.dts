@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Device tree overlay for Infineon SLB9670 / LetsTrust TPM on SPI0 CE1.
+ * Matches the Raspberry Pi vendor overlay used by LetsTrust docs:
+ *   dtparam=spi=on
+ *   dtoverlay=tpm-slb9670
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target = <&spi0>;
+		__overlay__ {
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			slb9670: slb9670@1 {
+				compatible = "infineon,slb9670", "tcg,tpm_tis-spi";
+				reg = <1>;
+				spi-max-frequency = <32000000>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spidev1>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};
