@@ -1,6 +1,0 @@
-config BR2_PACKAGE_RPI400_BCM43456_FIRMWARE
-	bool "rpi400 BCM43456 Wi-Fi firmware"
-	help
-	  Install the BCM43456 brcmfmac firmware files needed by Raspberry Pi 400
-	  boards, including the board-specific firmware symlinks requested by the
-	  kernel.
