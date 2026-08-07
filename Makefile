@@ -39,10 +39,10 @@ endef
 
 ifneq ($(filter-out default help list clean download,$(MAKECMDGOALS)),)
   ifndef BOARD
-    $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64_efi)
+    $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
 endif
-.PHONY: default help list download dependencies configure build burn clean
+.PHONY: default help list download dependencies configure build burn qemu clean
 
 default: help
 
@@ -86,13 +86,43 @@ configure: dependencies $(PATCH_STAMP) ## Run <BOARD>_defconfig
 build: configure ## Build <BOARD>
 	$(call buildroot,)
 
-burn: build ## Write <BOARD> disk image to DEVICE
-	@if [ ! -b "$(DEVICE)" ]; then
+VARIANT ?= iso
+
+burn: build ## Write image to DEVICE (VARIANT=iso|rpi3b|rpi400)
+	@if [ -z "$(DEVICE)" ]; then
+		echo "error: DEVICE is required, e.g.: make burn BOARD=$(BOARD) DEVICE=/dev/sdX" >&2
+		exit 1
+	fi
+	if [ ! -b "$(DEVICE)" ]; then
 		echo "error: $(DEVICE) is not a block device" >&2
 		exit 1
 	fi
-	sudo dd if="$(BOARD_DIR)/images/disk.img" \
-		of="$(DEVICE)" bs=1M status=progress oflag=sync
+	case "$(VARIANT)" in
+	iso) image="$(BOARD_DIR)/images/$(BOARD).iso" ;;
+	rpi3b|rpi400)
+		if [ "$(BOARD)" != tpmdd_arm64 ]; then
+			echo "error: VARIANT=$(VARIANT) requires BOARD=tpmdd_arm64" >&2
+			exit 1
+		fi
+		image="$(BOARD_DIR)/images/$(BOARD)-$(VARIANT).img"
+		;;
+	*)
+		echo "error: unknown VARIANT=$(VARIANT) (iso|rpi3b|rpi400)" >&2
+		exit 1
+		;;
+	esac
+	if [ ! -f "$$image" ]; then
+		echo "error: $$image not found; run: make build BOARD=$(BOARD)" >&2
+		exit 2
+	fi
+	sudo dd if="$$image" of="$(DEVICE)" bs=1M status=progress oflag=sync
+
+qemu: ## Boot <BOARD> in QEMU
+	@if [ ! -f "$(BOARD_DIR)/images/$(BOARD).iso" ]; then
+		echo "error: $(BOARD_DIR)/images/$(BOARD).iso not found; run: make build BOARD=$(BOARD)" >&2
+		exit 2
+	fi
+	exec "$(BOARD_DIR)/images/run-qemu.sh"
 
 clean: ## Remove build artifacts
 	rm -rf "$(CURDIR)/$(BUILD_DIR)"

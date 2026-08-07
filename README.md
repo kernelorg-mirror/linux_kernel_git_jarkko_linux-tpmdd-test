@@ -2,13 +2,25 @@
 
 ## Building
 
-1.  **Configure the project** (only needed for the first build):
-    ```
-    make configure BOARD=tpmdd_amd64_efi
-    ```
+```sh
+make build BOARD=tpmdd_amd64
+make build BOARD=tpmdd_arm64
+```
 
-2.  **Build the image**:
-    ```
-    make build BOARD=tpmdd_amd64_efi
-    ```
-    For any subsequent changes, you can simply re-run `make build BOARD=tpmdd_amd64_efi`.
+## Running
+
+```sh
+make qemu BOARD=tpmdd_amd64
+```
+
+Flash images with `make burn` (requires `DEVICE`):
+
+```sh
+make burn BOARD=tpmdd_amd64 DEVICE=/dev/sdX
+make burn BOARD=tpmdd_arm64 DEVICE=/dev/sdX
+make burn BOARD=tpmdd_arm64 VARIANT=rpi3b DEVICE=/dev/sdX
+make burn BOARD=tpmdd_arm64 VARIANT=rpi400 DEVICE=/dev/sdX
+```
+
+The generated SSH client configuration is located at
+`build/<BOARD>/images/ssh_config`.
