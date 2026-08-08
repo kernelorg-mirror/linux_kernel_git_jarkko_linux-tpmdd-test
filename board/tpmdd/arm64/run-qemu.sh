@@ -19,7 +19,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-opt_graphics=false
 opt_serial_socket=false
 QEMU_TPM_DEVICE="tpm-tis-device"
 SWTPM_TPM2="--tpm2"
@@ -27,7 +26,6 @@ gdb_port=""
 
 while [ "$1" ]; do
   case "$1" in
-  --graphics) opt_graphics=true; shift;;
   --tpm1) SWTPM_TPM2=""; shift;;
   --gdb) gdb_port="1234"; shift;;
   --gdb=*) gdb_port="${1#--gdb=}"; shift;;
@@ -38,15 +36,11 @@ while [ "$1" ]; do
 done
 
 extra_args=("$@")
-if $opt_graphics; then
-  extra_args+=(
-    "-device" "virtio-gpu-pci"
-    "-device" "virtio-serial-pci"
-    "-display" "gtk"
-  )
-else
-  extra_args+=("-nographic")
-fi
+extra_args+=(
+  "-device" "virtio-gpu-pci"
+  "-device" "virtio-serial-pci"
+  "-display" "gtk"
+)
 if [[ -n "$gdb_port" ]]; then
   extra_args+=("-S" "-gdb" "tcp::${gdb_port}")
 fi

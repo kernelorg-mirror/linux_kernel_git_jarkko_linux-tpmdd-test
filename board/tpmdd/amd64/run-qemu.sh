@@ -19,7 +19,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-opt_graphics=false
 opt_serial_socket=false
 QEMU_TPM_DEVICE="tpm-tis"
 SWTPM_TPM2="--tpm2"
@@ -27,7 +26,6 @@ gdb_port=""
 
 while [ "$1" ]; do
   case "$1" in
-  --graphics) opt_graphics=true; shift;;
   --tpm-crb) QEMU_TPM_DEVICE="tpm-crb"; shift;;
   --tpm1) SWTPM_TPM2=""; shift;;
   --gdb) gdb_port="1234"; shift;;
@@ -39,17 +37,14 @@ while [ "$1" ]; do
 done
 
 extra_args=("$@")
-if $opt_graphics; then
-  extra_args+=(
-    "-device" "virtio-vga-gl,hostmem=2G,blob=true,venus=true"
-    "-device" "virtio-serial-pci"
-    "-chardev" "spicevmc,id=vdagent0,name=vdagent"
-    "-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0"
-    "-display" "gtk,gl=on"
-  )
-else
-  extra_args+=("-nographic")
-fi
+extra_args+=(
+  "-device" "virtio-vga-gl,hostmem=2G,blob=true,venus=true"
+  "-device" "virtio-serial-pci"
+  "-chardev" "spicevmc,id=vdagent0,name=vdagent"
+  "-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0"
+  "-display" "gtk,gl=on"
+)
+
 if [[ -n "$gdb_port" ]]; then
   extra_args+=("-S" "-gdb" "tcp::${gdb_port}")
 fi
