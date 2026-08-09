@@ -154,6 +154,10 @@ build_rpi_sd() {
   stage=$(mktemp -d "${BINARIES_DIR}/rpi-sd-${variant}.XXXXXX")
   boot_vfat="${BINARIES_DIR}/rpi-boot-${variant}.vfat"
   cfg="${BINARIES_DIR}/genimage-sd-${variant}.cfg"
+  cleanup_sd() {
+    rm -rf "${stage}" "${boot_vfat}" "${cfg}"
+  }
+  trap cleanup_sd EXIT
   img="tpmdd_${TPMDD_ARCH}-${variant}.img"
   sd_cmdline="root=live:LABEL=TPMDD ${live_cmdline} acpi=off${cmdline_extra} console=tty0"
 
@@ -203,7 +207,8 @@ EOF
 
   support/scripts/genimage.sh -c "${cfg}"
 
-  rm -rf "${stage}" "${boot_vfat}" "${cfg}"
+  cleanup_sd
+  trap - EXIT
 }
 
 if [ "${TPMDD_ARCH}" = arm64 ] && [ -d "${BINARIES_DIR}/rpi-uefi/rpi3" ]; then
