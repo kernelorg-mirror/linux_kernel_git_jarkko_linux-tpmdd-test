@@ -14,7 +14,7 @@ BOARD_DIR="$(dirname "$0")"
 PATH="${HOST_DIR}/bin:${HOST_DIR}/sbin:${PATH}"
 
 kver=$(basename "$(find "${TARGET_DIR}/usr/lib/modules" -mindepth 1 -maxdepth 1 -type d \
-  | sort | tail -n1)")
+  | sort -V | tail -n1)")
 test -n "${kver}"
 
 case "${TPMDD_ARCH}" in

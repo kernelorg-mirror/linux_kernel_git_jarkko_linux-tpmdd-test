@@ -21,7 +21,7 @@ if [ ! -f "${SSH_DIR}/id-rsa" ]; then
 fi
 
 kver=$(basename "$(find "${TARGET_DIR}/usr/lib/modules" -mindepth 1 -maxdepth 1 -type d \
-  | sort | tail -n1)")
+  | sort -V | tail -n1)")
 test -n "${kver}"
 
 case "${TPMDD_ARCH}" in
