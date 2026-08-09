@@ -37,6 +37,14 @@ define buildroot
     $(1)
 endef
 
+# Require a build artifact, erroring with a build hint if missing.
+define require_artifact
+  @if [ ! -f "$(1)" ]; then
+    echo "error: $(1) not found; run: make build BOARD=$(BOARD)" >&2
+    exit 2
+  fi
+endef
+
 ifneq ($(filter-out default help list clean download,$(MAKECMDGOALS)),)
   ifndef BOARD
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
@@ -118,11 +126,8 @@ burn: build ## Write image to DEVICE (VARIANT=iso|rpi3b|rpi400)
 	sudo dd if="$$image" of="$(DEVICE)" bs=1M status=progress oflag=sync
 
 qemu: ## Boot <BOARD> in QEMU
-	@if [ ! -f "$(BOARD_DIR)/images/$(BOARD).iso" ]; then
-		echo "error: $(BOARD_DIR)/images/$(BOARD).iso not found; run: make build BOARD=$(BOARD)" >&2
-		exit 2
-	fi
-	exec "$(BOARD_DIR)/images/run-qemu.sh"
+	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).iso)
+	exec "$(BOARD_DIR)/images/qemu-exec.sh"
 
 clean: ## Remove build artifacts
 	rm -rf "$(CURDIR)/$(BUILD_DIR)"

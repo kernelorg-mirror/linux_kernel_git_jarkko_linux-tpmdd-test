@@ -5,6 +5,17 @@ set -e
 
 cd "${0%/*}"
 
+# The architecture is derived from the ISO present in this directory: each
+# board build produces its own images directory.
+if [ -f tpmdd_amd64.iso ]; then
+  TPMDD_ARCH=amd64
+elif [ -f tpmdd_arm64.iso ]; then
+  TPMDD_ARCH=arm64
+else
+  echo "error: neither tpmdd_amd64.iso nor tpmdd_arm64.iso found" >&2
+  exit 1
+fi
+
 swtpm_dir=$(mktemp -d -t swtpm-XXXXXX)
 swtpm_state_dir="$swtpm_dir/state"
 swtpm_conf_dir="$swtpm_dir/config"
@@ -24,9 +35,23 @@ QEMU_TPM_DEVICE="tpm-tis"
 SWTPM_TPM2="--tpm2"
 gdb_port=""
 
+case "${TPMDD_ARCH}" in
+  amd64)
+    QEMU_TPM_DEVICE="tpm-tis"
+    ;;
+  arm64)
+    QEMU_TPM_DEVICE="tpm-tis-device"
+    ;;
+esac
+
 while [ "$1" ]; do
   case "$1" in
-  --tpm-crb) QEMU_TPM_DEVICE="tpm-crb"; shift;;
+  --tpm-crb)
+    [ "${TPMDD_ARCH}" = amd64 ] || {
+      echo "error: --tpm-crb is only supported on amd64" >&2
+      exit 1
+    }
+    QEMU_TPM_DEVICE="tpm-crb"; shift;;
   --tpm1) SWTPM_TPM2=""; shift;;
   --gdb) gdb_port="1234"; shift;;
   --gdb=*) gdb_port="${1#--gdb=}"; shift;;
@@ -37,13 +62,24 @@ while [ "$1" ]; do
 done
 
 extra_args=("$@")
-extra_args+=(
-  "-device" "virtio-vga-gl,hostmem=2G,blob=true,venus=true"
-  "-device" "virtio-serial-pci"
-  "-chardev" "spicevmc,id=vdagent0,name=vdagent"
-  "-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0"
-  "-display" "gtk,gl=on"
-)
+case "${TPMDD_ARCH}" in
+  amd64)
+    extra_args+=(
+      "-device" "virtio-vga-gl,hostmem=2G,blob=true,venus=true"
+      "-device" "virtio-serial-pci"
+      "-chardev" "spicevmc,id=vdagent0,name=vdagent"
+      "-device" "virtserialport,chardev=vdagent0,name=com.redhat.spice.0"
+      "-display" "gtk,gl=on"
+    )
+    ;;
+  arm64)
+    extra_args+=(
+      "-device" "virtio-gpu-pci"
+      "-device" "virtio-serial-pci"
+      "-display" "gtk"
+    )
+    ;;
+esac
 
 if [[ -n "$gdb_port" ]]; then
   extra_args+=("-S" "-gdb" "tcp::${gdb_port}")
@@ -94,20 +130,40 @@ swtpm socket \
   --pid file="$swtpm_dir/swtpm.pid" \
   --log file=swtpm.log,level=20 ${SWTPM_TPM2} -d
 
-qemu-system-x86_64 \
-  -M pc \
-  -m 1G \
-  -monitor unix:monitor.sock,server,nowait \
-  -drive file=tpmdd_amd64.iso,if=virtio,format=raw,readonly=on \
-  -netdev user,id=net0,hostfwd=tcp::10022-:22 \
-  -device virtio-net-pci,netdev=net0 \
-  -rtc base=localtime \
-  -chardev socket,id=chrtpm,path="$swtpm_dir/swtpm-sock" \
-  -tpmdev emulator,id=tpm0,chardev=chrtpm \
-  -device ${QEMU_TPM_DEVICE},tpmdev=tpm0 \
-  -drive if=pflash,format=raw,file="$PWD/OVMF_CODE.fd",readonly=on \
-  -drive if=pflash,format=raw,file="$PWD/OVMF_VARS.fd" \
-  "${extra_args[@]}" <&0 &
+case "${TPMDD_ARCH}" in
+  amd64)
+    qemu-system-x86_64 \
+      -M pc \
+      -m 1G \
+      -monitor unix:monitor.sock,server,nowait \
+      -drive file=tpmdd_amd64.iso,if=virtio,format=raw,readonly=on \
+      -netdev user,id=net0,hostfwd=tcp::10022-:22 \
+      -device virtio-net-pci,netdev=net0 \
+      -rtc base=localtime \
+      -chardev socket,id=chrtpm,path="$swtpm_dir/swtpm-sock" \
+      -tpmdev emulator,id=tpm0,chardev=chrtpm \
+      -device ${QEMU_TPM_DEVICE},tpmdev=tpm0 \
+      -drive if=pflash,format=raw,file="$PWD/OVMF_CODE.fd",readonly=on \
+      -drive if=pflash,format=raw,file="$PWD/OVMF_VARS.fd" \
+      "${extra_args[@]}" <&0 &
+    ;;
+  arm64)
+    qemu-system-aarch64 \
+      -M virt \
+      -cpu cortex-a72 \
+      -m 1G \
+      -monitor unix:monitor.sock,server,nowait \
+      -drive file=tpmdd_arm64.iso,if=virtio,format=raw,readonly=on \
+      -netdev user,id=net0,hostfwd=tcp::10022-:22 \
+      -device virtio-net-pci,netdev=net0 \
+      -rtc base=localtime \
+      -chardev socket,id=chrtpm,path="$swtpm_dir/swtpm-sock" \
+      -tpmdev emulator,id=tpm0,chardev=chrtpm \
+      -device ${QEMU_TPM_DEVICE},tpmdev=tpm0 \
+      -bios QEMU_EFI.fd \
+      "${extra_args[@]}" <&0 &
+    ;;
+esac
 qemu_pid=$!
 echo "$qemu_pid" > qemu.pid
 wait "$qemu_pid"
