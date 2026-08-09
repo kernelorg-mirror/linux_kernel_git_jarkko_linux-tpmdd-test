@@ -130,6 +130,10 @@ swtpm socket \
   --pid file="$swtpm_dir/swtpm.pid" \
   --log file=swtpm.log,level=20 ${SWTPM_TPM2} -d
 
+# QEMU does not unlink stale Unix sockets before binding; a previous crash
+# would otherwise fail the next run with EADDRINUSE.
+rm -vf monitor.sock serial.sock
+
 case "${TPMDD_ARCH}" in
   amd64)
     qemu-system-x86_64 \
