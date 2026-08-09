@@ -24,3 +24,10 @@ make burn BOARD=tpmdd_arm64 VARIANT=rpi400 DEVICE=/dev/sdX
 
 The generated SSH client configuration is located at
 `build/<BOARD>/images/ssh_config`.
+
+Open a root SSH session with the generated client configuration:
+
+```sh
+make ssh BOARD=tpmdd_amd64
+```
+

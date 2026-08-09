@@ -50,7 +50,7 @@ ifneq ($(filter-out default help list clean download,$(MAKECMDGOALS)),)
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
 endif
-.PHONY: default help list download dependencies configure build burn qemu clean
+.PHONY: default help list download dependencies configure build burn qemu ssh clean
 
 default: help
 
@@ -128,6 +128,10 @@ burn: build ## Write image to DEVICE (VARIANT=iso|rpi3b|rpi400)
 qemu: ## Boot <BOARD> in QEMU
 	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).iso)
 	exec "$(BOARD_DIR)/images/qemu-exec.sh"
+
+ssh: ## Open an SSH session to <BOARD>
+	$(call require_artifact,$(BOARD_DIR)/images/ssh_config)
+	exec ssh -F "$(BOARD_DIR)/images/ssh_config" tpmdd.local
 
 clean: ## Remove build artifacts
 	rm -rf "$(CURDIR)/$(BUILD_DIR)"
