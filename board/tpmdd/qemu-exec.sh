@@ -87,6 +87,8 @@ fi
 
 if $opt_serial_socket; then
   extra_args+=("-serial" "unix:serial.sock,server,wait")
+else
+  extra_args+=("-serial" "stdio")
 fi
 
 mkdir -p "$swtpm_state_dir" "$swtpm_conf_dir" "$swtpm_localca_dir"
