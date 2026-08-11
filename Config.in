@@ -8,5 +8,4 @@ config BR2_TPMDD_LIVE_IMAGE
 
 menu "TPMDD packages"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/toolbx/Config.in"
-source "$BR2_EXTERNAL_TPMDD_PATH/package/rpi-uefi/Config.in"
 endmenu

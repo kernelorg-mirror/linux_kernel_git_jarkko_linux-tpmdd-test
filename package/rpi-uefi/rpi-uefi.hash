@@ -1,5 +1,0 @@
-# From https://github.com/pftf/RPi3/releases/tag/v1.52
-sha256  20b894d15cdb42e055872a7ee6a850aa9373aedcfefd27f19767d975ce4f7371  RPi3_UEFI_Firmware_v1.52.zip
-sha256  3322ae85b1a74b1e67cb7bcf9e4af65299ae76e2db0af451e4ac6cd007c7a608  RPi4_UEFI_Firmware_v1.52.zip
-# Locally calculated
-sha256  c93f26ac4b95de98950f4f9e477feb97a6dde84c0bf83c565b56106c600f07db  rpi3/Readme.md

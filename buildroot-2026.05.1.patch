@@ -195,3 +195,73 @@ index b0e59ad..b2af511 100755
      > .cargo/config.toml
  
  # "cargo vendor' outputs on stderr a message directing to add some data
+diff --git a/boot/edk2/Config.in b/boot/edk2/Config.in
+index 2620c79..390e3e5 100644
+--- a/boot/edk2/Config.in
++++ b/boot/edk2/Config.in
+@@ -109,0 +110,8 @@ endchoice
++config BR2_TARGET_EDK2_RPI
++	bool "Raspberry Pi 3 and 4 firmware"
++	depends on BR2_aarch64
++	select BR2_PACKAGE_EDK2_NON_OSI
++	help
++	  Build additional EDK2 firmware images for Raspberry Pi 3 and
++	  Raspberry Pi 4 platforms.
++
+diff --git a/boot/edk2/edk2.mk b/boot/edk2/edk2.mk
+index 11d9b90..bb171bc 100644
+--- a/boot/edk2/edk2.mk
++++ b/boot/edk2/edk2.mk
+@@ -126,0 +127,5 @@ endif
++ifeq ($(BR2_TARGET_EDK2_RPI),y)
++EDK2_DEPENDENCIES += edk2-non-osi
++EDK2_PACKAGES_PATHS += $(STAGING_DIR)/usr/share/edk2-non-osi
++endif
++
+@@ -163,0 +169,20 @@ endef
++ifeq ($(BR2_TARGET_EDK2_RPI),y)
++EDK2_RPI_BUILD_OPTS = \
++	-t GCC5 \
++	-n $(BR2_JLEVEL) \
++	-a AARCH64 \
++	-b $(EDK2_BUILD_TYPE) \
++	$(call qstrip,$(BR2_TARGET_EDK2_EXTRA_BUILD_OPTS))
++
++define EDK2_BUILD_RPI
++	export $(EDK2_BUILD_ENV) && \
++	unset ARCH && \
++	source $(@D)/edksetup.sh && \
++	build $(EDK2_RPI_BUILD_OPTS) \
++		-p Platform/RaspberryPi/RPi3/RPi3.dsc all && \
++	build $(EDK2_RPI_BUILD_OPTS) \
++		-p Platform/RaspberryPi/RPi4/RPi4.dsc all
++endef
++EDK2_POST_BUILD_HOOKS += EDK2_BUILD_RPI
++endif
++
+@@ -167,0 +193,12 @@ endef
++ifeq ($(BR2_TARGET_EDK2_RPI),y)
++define EDK2_INSTALL_RPI_IMAGES
++	$(INSTALL) -D -m 0644 \
++		$(@D)/Build/RPi3/$(EDK2_BUILD_TYPE)_GCC5/FV/RPI_EFI.fd \
++		$(BINARIES_DIR)/RPI3_EFI.fd
++	$(INSTALL) -D -m 0644 \
++		$(@D)/Build/RPi4/$(EDK2_BUILD_TYPE)_GCC5/FV/RPI_EFI.fd \
++		$(BINARIES_DIR)/RPI4_EFI.fd
++endef
++EDK2_POST_INSTALL_IMAGES_HOOKS += EDK2_INSTALL_RPI_IMAGES
++endif
++
+diff --git a/package/edk2-non-osi/edk2-non-osi.mk b/package/edk2-non-osi/edk2-non-osi.mk
+index 57c8fca..6069e80 100644
+--- a/package/edk2-non-osi/edk2-non-osi.mk
++++ b/package/edk2-non-osi/edk2-non-osi.mk
+@@ -17,0 +18,8 @@ EDK2_NON_OSI_DIRS += Silicon/Marvell/Armada7k8k/DeviceTree
++EDK2_NON_OSI_LICENSE += , BSD-3-Clause (Raspberry Pi TF-A)
++EDK2_NON_OSI_LICENSE_FILES += \
++	Platform/RaspberryPi/RPi3/TrustedFirmware/License.txt \
++	Platform/RaspberryPi/RPi4/TrustedFirmware/License.txt
++EDK2_NON_OSI_DIRS += \
++	Platform/RaspberryPi/RPi3/TrustedFirmware \
++	Platform/RaspberryPi/RPi4/TrustedFirmware
++
