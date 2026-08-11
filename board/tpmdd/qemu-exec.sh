@@ -5,14 +5,12 @@ set -e
 
 cd "${0%/*}"
 
-# The architecture is derived from the ISO present in this directory: each
-# board build produces its own images directory.
 if [ -f tpmdd_amd64.iso ]; then
   TPMDD_ARCH=amd64
-elif [ -f tpmdd_arm64.iso ]; then
+elif [ -f tpmdd_arm64.img ]; then
   TPMDD_ARCH=arm64
 else
-  echo "error: neither tpmdd_amd64.iso nor tpmdd_arm64.iso found" >&2
+  echo "error: neither tpmdd_amd64.iso nor tpmdd_arm64.img found" >&2
   exit 1
 fi
 
@@ -159,7 +157,7 @@ case "${TPMDD_ARCH}" in
       -cpu cortex-a72 \
       -m 1G \
       -monitor unix:monitor.sock,server,nowait \
-      -drive file=tpmdd_arm64.iso,if=virtio,format=raw,readonly=on \
+      -drive file=tpmdd_arm64.img,if=virtio,format=raw,readonly=on \
       -netdev user,id=net0,hostfwd=tcp::10022-:22 \
       -device virtio-net-pci,netdev=net0 \
       -rtc base=localtime \

@@ -28,6 +28,7 @@ PATCH_STAMP  := $(STAMP_DIR)/$(BUILDROOT_VERSION)/patch
 # Artifacts
 BUILDROOT_TARBALL := $(DOWNLOAD_DIR)/buildroot-$(BUILDROOT_VERSION).tar.xz
 BUILDROOT_PATCH   := $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
+IMAGE_EXT        := $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
 
 # Buildroot invocation helper
 define buildroot
@@ -94,9 +95,7 @@ configure: dependencies $(PATCH_STAMP) ## Run <BOARD>_defconfig
 build: configure ## Build <BOARD>
 	$(call buildroot,)
 
-VARIANT ?= iso
-
-burn: build ## Write image to DEVICE (VARIANT=iso|rpi3b|rpi400)
+burn: build ## Write image to DEVICE
 	@if [ -z "$(DEVICE)" ]; then
 		echo "error: DEVICE is required, e.g.: make burn BOARD=$(BOARD) DEVICE=/dev/sdX" >&2
 		exit 1
@@ -105,20 +104,7 @@ burn: build ## Write image to DEVICE (VARIANT=iso|rpi3b|rpi400)
 		echo "error: $(DEVICE) is not a block device" >&2
 		exit 1
 	fi
-	case "$(VARIANT)" in
-	iso) image="$(BOARD_DIR)/images/$(BOARD).iso" ;;
-	rpi3b|rpi400)
-		if [ "$(BOARD)" != tpmdd_arm64 ]; then
-			echo "error: VARIANT=$(VARIANT) requires BOARD=tpmdd_arm64" >&2
-			exit 1
-		fi
-		image="$(BOARD_DIR)/images/$(BOARD)-$(VARIANT).img"
-		;;
-	*)
-		echo "error: unknown VARIANT=$(VARIANT) (iso|rpi3b|rpi400)" >&2
-		exit 1
-		;;
-	esac
+	image="$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)"
 	if [ ! -f "$$image" ]; then
 		echo "error: $$image not found; run: make build BOARD=$(BOARD)" >&2
 		exit 2
@@ -126,7 +112,7 @@ burn: build ## Write image to DEVICE (VARIANT=iso|rpi3b|rpi400)
 	sudo dd if="$$image" of="$(DEVICE)" bs=1M status=progress oflag=sync
 
 qemu: ## Boot <BOARD> in QEMU
-	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).iso)
+	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT))
 	exec "$(BOARD_DIR)/images/qemu-exec.sh"
 
 ssh: ## Open an SSH session to <BOARD>
