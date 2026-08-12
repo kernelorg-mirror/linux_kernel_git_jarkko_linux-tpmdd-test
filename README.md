@@ -1,5 +1,8 @@
 # linux-tpmdd test suite
 
+bootc container host for linux-tpmdd kernel testing. Builds a live ISO/image
+and an OCI bootc image (`image.tar`).
+
 ## Building
 
 ### Host
@@ -9,8 +12,12 @@ make build BOARD=tpmdd_amd64
 make build BOARD=tpmdd_arm64
 ```
 
-The ARM64 build produces one `tpmdd_arm64.img` for QEMU, Raspberry Pi 3,
-and Raspberry Pi 4/400.
+Artifacts under `build/<BOARD>/images/`:
+
+- `tpmdd_amd64.iso` / `tpmdd_arm64.img` — live test media
+- `image.tar` — OCI bootc container (`containers.bootc=1`)
+- `image.manifest` — imgref/digest metadata
+- `ssh_config` — generated SSH client config
 
 ### OCI container
 
@@ -34,12 +41,8 @@ make burn BOARD=tpmdd_amd64 DEVICE=/dev/sdX
 make burn BOARD=tpmdd_arm64 DEVICE=/dev/sdX
 ```
 
-The generated SSH client configuration is located at
-`build/<BOARD>/images/ssh_config`.
-
 Open a root SSH session with the generated client configuration:
 
 ```sh
 make ssh BOARD=tpmdd_amd64
 ```
-
