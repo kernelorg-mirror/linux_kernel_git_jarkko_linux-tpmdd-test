@@ -9,6 +9,7 @@ set -euo pipefail
 : "${BINARIES_DIR:?BINARIES_DIR must be set by Buildroot}"
 : "${HOST_DIR:?HOST_DIR must be set by Buildroot}"
 TPMDD_ARCH=${2:?architecture argument required (amd64 or arm64)}
+TPMDD_VERSION=${TPMDD_VERSION:-0}
 
 BOARD_DIR="$(dirname "$0")"
 PATH="${HOST_DIR}/bin:${HOST_DIR}/sbin:${PATH}"
@@ -47,7 +48,9 @@ test -f "${rootfs_squashfs}"
 printf -v os_release '%s\n' \
   'NAME=tpmdd' \
   'ID=tpmdd' \
-  'PRETTY_NAME="linux-tpmdd live test image"'
+  "VERSION=\"${TPMDD_VERSION}\"" \
+  "VERSION_ID=${TPMDD_VERSION}" \
+  "PRETTY_NAME=\"linux-tpmdd ${TPMDD_VERSION} live test image\""
 
 build_uki() {
   local out=$1 cmdline=$2

@@ -7,7 +7,8 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 
 # Versions
-BUILDROOT_VERSION ?= 2026.05.1
+TPMDD_VERSION     ?= 2026.05.1
+BUILDROOT_VERSION ?= $(TPMDD_VERSION)
 
 # URLs and hashes
 BUILDROOT_HASH ?= ae7f706f087b9ae9083a10a587368dfbf53103c28bf81c2d690198dc4090cb58
@@ -35,6 +36,7 @@ define buildroot
   make -C "$(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)" O="$(BOARD_DIR)" \
     BR2_EXTERNAL="$(CURDIR)" BR2_DL_DIR="$(DOWNLOAD_DIR)" \
     BR2_CCACHE_DIR="$(CCACHE_DIR)" \
+    TPMDD_VERSION="$(TPMDD_VERSION)" \
     $(1)
 endef
 
