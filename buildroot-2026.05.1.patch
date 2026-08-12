@@ -265,3 +265,191 @@ index 57c8fca..6069e80 100644
 +	Platform/RaspberryPi/RPi3/TrustedFirmware \
 +	Platform/RaspberryPi/RPi4/TrustedFirmware
 +
+diff --git a/package/libostree/Config.in b/package/libostree/Config.in
+index 49eed651..d0bec81f 100644
+--- a/package/libostree/Config.in
++++ b/package/libostree/Config.in
+@@ -1,27 +1,34 @@
+ config BR2_PACKAGE_LIBOSTREE
+ 	bool "libostree"
++	depends on BR2_INIT_SYSTEMD
+ 	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgpgme, libgpg-error
+-	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
+-	depends on BR2_USE_WCHAR # libglib2
+-	depends on BR2_USE_MMU # e2fsprogs, libglib2, libgpgme
++	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2, libsoup3
++	depends on BR2_USE_WCHAR # libglib2, libsoup3
++	depends on BR2_USE_MMU # e2fsprogs, libglib2, libgpgme, libsoup3
+ 	# doesn't build with musl due to lack of TEMP_FAILURE_RETRY()
+ 	depends on !BR2_TOOLCHAIN_USES_MUSL
+ 	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_8 # loop_config
+ 	select BR2_PACKAGE_E2FSPROGS
+-	select BR2_PACKAGE_LIBARCHIVE if BR2_s390x
++	select BR2_PACKAGE_LIBARCHIVE
++	select BR2_PACKAGE_LIBCAP
++	select BR2_PACKAGE_COMPOSEFS
+ 	select BR2_PACKAGE_LIBGLIB2
+ 	select BR2_PACKAGE_LIBGPG_ERROR
+ 	select BR2_PACKAGE_LIBGPGME
++	select BR2_PACKAGE_LIBSOUP3
++	select BR2_PACKAGE_SYSTEMD
++	select BR2_PACKAGE_UTIL_LINUX
+ 	select BR2_PACKAGE_XZ
++	select BR2_PACKAGE_ZLIB
+ 	help
+ 	  OSTree is an upgrade system for Linux-based operating
+ 	  systems.
+ 
+ 	  https://ostree.readthedocs.io/en/latest/
+ 
+-comment "libostree needs a uClibc or glibc toolchain w/ threads, dynamic library, wchar, headers >= 5.8"
+-	depends on !BR2_TOOLCHAIN_HAS_THREADS || BR2_STATIC_LIBS \
+-		|| !BR2_USE_WCHAR || BR2_TOOLCHAIN_USES_MUSL || \
+-		!BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_8
++comment "libostree needs a systemd init and a uClibc or glibc toolchain w/ threads, dynamic library, wchar, headers >= 5.8"
++	depends on !BR2_INIT_SYSTEMD || !BR2_TOOLCHAIN_HAS_THREADS \
++		|| BR2_STATIC_LIBS || !BR2_USE_WCHAR || BR2_TOOLCHAIN_USES_MUSL \
++		|| !BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_8
+ 	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS
+ 	depends on BR2_USE_MMU
+diff --git a/package/libostree/libostree.hash b/package/libostree/libostree.hash
+index d4645c59..94912c8a 100644
+--- a/package/libostree/libostree.hash
++++ b/package/libostree/libostree.hash
+@@ -1,3 +1,5 @@
+-# Locally calculated
+-sha256  b6fffc267188e40d60755e6d7f2be65831795baa53b0fd9dd6c6809c7e54796d  libostree-2023.8.tar.xz
++# From https://github.com/ostreedev/ostree/releases/download/v2026.1/libostree-2026.1.tar.xz
++sha256  8e77c285dd6fa5ec5fb063130390977be727fe11107335ed8778a40385069e95  libostree-2026.1.tar.xz
++
++# Hash for license file
+ sha256  b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c  COPYING
+diff --git a/package/libostree/libostree.mk b/package/libostree/libostree.mk
+index a737dc04..6ff53cf3 100644
+--- a/package/libostree/libostree.mk
++++ b/package/libostree/libostree.mk
+@@ -4,24 +4,51 @@
+ #
+ ################################################################################
+ 
+-LIBOSTREE_VERSION = 2023.8
++LIBOSTREE_VERSION = 2026.1
+ LIBOSTREE_SOURCE = libostree-$(LIBOSTREE_VERSION).tar.xz
+ LIBOSTREE_SITE = https://github.com/ostreedev/ostree/releases/download/v$(LIBOSTREE_VERSION)
+ 
+ LIBOSTREE_LICENSE = LGPL-2.0+
+ LIBOSTREE_LICENSE_FILES = COPYING
+-LIBOSTREE_DEPENDENCIES = e2fsprogs host-bison host-pkgconf libglib2 libgpg-error libgpgme xz
++LIBOSTREE_DEPENDENCIES = \
++	composefs \
++	e2fsprogs \
++	host-bison \
++	host-pkgconf \
++	libarchive \
++	libcap \
++	libglib2 \
++	libgpg-error \
++	libgpgme \
++	libsoup3 \
++	systemd \
++	util-linux \
++	xz \
++	zlib
+ LIBOSTREE_INSTALL_STAGING = YES
+ 
+ LIBOSTREE_CONF_ENV = \
+ 	GPG_ERROR_CONFIG=$(STAGING_DIR)/usr/bin/gpg-error-config
+ LIBOSTREE_CONF_OPTS += \
++	--with-composefs \
++	--without-avahi \
++	--without-curl \
++	--with-crypto=glib \
++	--without-ed25519-libsodium \
++	--without-ed25519-openssl \
++	--with-gpgme \
+ 	--with-gpgme-prefix=$(STAGING_DIR)/usr \
+-	--without-soup \
++	--with-libarchive \
++	--with-libmount \
++	--with-libsystemd \
++	--without-rofiles-fuse \
++	--with-soup3 \
++	--with-dracut=yes \
+ 	--disable-gtk-doc \
+ 	--disable-gtk-doc-html \
+ 	--disable-gtk-doc-pdf \
+-	--disable-man
++	--disable-man \
++	--disable-otmpfile
+ 
+ ifeq ($(BR2_PACKAGE_GOBJECT_INTROSPECTION),y)
+ LIBOSTREE_DEPENDENCIES += gobject-introspection
+@@ -31,48 +58,6 @@ else
+ LIBOSTREE_CONF_OPTS += --disable-introspection
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_OPENSSL),y)
+-LIBOSTREE_CONF_OPTS += --with-openssl
+-LIBOSTREE_DEPENDENCIES += openssl
+-else
+-LIBOSTREE_CONF_OPTS += --without-openssl
+-endif
+-
+-ifeq ($(BR2_PACKAGE_AVAHI_LIBAVAHI_CLIENT),y)
+-LIBOSTREE_CONF_OPTS += --with-avahi
+-LIBOSTREE_DEPENDENCIES += avahi
+-else
+-LIBOSTREE_CONF_OPTS += --without-avahi
+-endif
+-
+-# cURL support depends on libsoup3
+-ifeq ($(BR2_PACKAGE_LIBSOUP3),y)
+-LIBOSTREE_CONF_OPTS += --with-soup3
+-LIBOSTREE_DEPENDENCIES += libsoup3
+-ifeq ($(BR2_PACKAGE_LIBCURL),y)
+-LIBOSTREE_CONF_OPTS += --with-curl
+-LIBOSTREE_DEPENDENCIES += libcurl
+-else
+-LIBOSTREE_CONF_OPTS += --without-curl
+-endif
+-else
+-LIBOSTREE_CONF_OPTS += --without-soup3 --without-curl
+-endif
+-
+-ifeq ($(BR2_PACKAGE_LIBARCHIVE),y)
+-LIBOSTREE_CONF_OPTS += --with-libarchive
+-LIBOSTREE_DEPENDENCIES += libarchive
+-else
+-LIBOSTREE_CONF_OPTS += --without-libarchive
+-endif
+-
+-ifeq ($(BR2_PACKAGE_LIBFUSE),y)
+-LIBOSTREE_CONF_OPTS += --enable-rofiles-fuse
+-LIBOSTREE_DEPENDENCIES += libfuse
+-else
+-LIBOSTREE_CONF_OPTS += --disable-rofiles-fuse
+-endif
+-
+ ifeq ($(BR2_PACKAGE_LIBSELINUX),y)
+ LIBOSTREE_CONF_OPTS += --with-selinux
+ LIBOSTREE_DEPENDENCIES += libselinux
+@@ -80,13 +65,11 @@ else
+ LIBOSTREE_CONF_OPTS += --without-selinux
+ endif
+ 
+-ifeq ($(BR2_INIT_SYSTEMD),y)
+-LIBOSTREE_CONF_OPTS += \
+-	--with-libsystemd \
+-	--with-systemdsystemunitdir=/usr/lib/systemd/system
+-LIBOSTREE_DEPENDENCIES += systemd
+-else
+-LIBOSTREE_CONF_OPTS += --without-libsystemd
+-endif
++define LIBOSTREE_INSTALL_DRACUT_MODULE
++	$(INSTALL) -D -m 0755 \
++		$(@D)/src/boot/dracut/module-setup.sh \
++		$(TARGET_DIR)/usr/lib/dracut/modules.d/50ostree/module-setup.sh
++endef
++LIBOSTREE_POST_INSTALL_TARGET_HOOKS += LIBOSTREE_INSTALL_DRACUT_MODULE
+ 
+ $(eval $(autotools-package))
