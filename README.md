@@ -2,6 +2,8 @@
 
 ## Building
 
+### Host
+
 ```sh
 make build BOARD=tpmdd_amd64
 make build BOARD=tpmdd_arm64
@@ -9,6 +11,14 @@ make build BOARD=tpmdd_arm64
 
 The ARM64 build produces one `tpmdd_arm64.img` for QEMU, Raspberry Pi 3,
 and Raspberry Pi 4/400.
+
+### OCI container
+
+```sh
+CONTAINER=docker ./scripts/build.sh
+```
+
+Builds every board defconfig; Buildroot downloads/ccache stay in `tpmdd-cache`.
 
 ## Running
 
