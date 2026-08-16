@@ -32,43 +32,12 @@ BUILDROOT_TARBALL := $(DOWNLOAD_DIR)/buildroot-$(BUILDROOT_VERSION).tar.xz
 BUILDROOT_PATCH   := $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
 IMAGE_EXT         := $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
 
-ifneq ($(BOARD),)
-  SDK_DEFCONFIG     := $(CURDIR)/configs/sdk/$(BOARD)_defconfig
-  SDK_HOST_ID       := $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
-  SDK_HOST_LIBC     := $(shell getconf GNU_LIBC_VERSION 2>/dev/null)
-  SDK_HOST_CC       := $(shell cc -dumpmachine 2>/dev/null)-$(shell cc -dumpfullversion -dumpversion 2>/dev/null)
-  SDK_HOST_BINUTILS := $(shell ld --version 2>/dev/null | head -n 1)
-  SDK_PATCHES       := $(shell cd "$(CURDIR)" && find patches -type f -print 2>/dev/null | LC_ALL=C sort)
-  SDK_KEY_METADATA  := \
-    'buildroot-version=$(BUILDROOT_VERSION)' \
-    'buildroot-hash=$(BUILDROOT_HASH)' \
-    'source-date-epoch=$(SOURCE_DATE_EPOCH)' \
-    'host=$(SDK_HOST_ID)' \
-    'host-libc=$(SDK_HOST_LIBC)' \
-    'host-cc=$(SDK_HOST_CC)' \
-    'host-binutils=$(SDK_HOST_BINUTILS)'
-
-  SDK_KEY           := $(if $(wildcard $(SDK_DEFCONFIG)),$(shell { \
-    printf '%s\n' $(SDK_KEY_METADATA); \
-    cd "$(CURDIR)"; \
-    sha256sum "configs/sdk/$(BOARD)_defconfig" \
-      "buildroot-$(BUILDROOT_VERSION).patch" $(SDK_PATCHES); \
-  } | sha256sum | cut -d ' ' -f 1),missing-sdk-defconfig)
-  SDK_BUILD_DIR := $(abspath $(BUILD_DIR)/sdk/$(BOARD)/$(SDK_KEY))
-  SDK_CACHE_DIR := $(CACHE_DIR)/sdk/$(BUILDROOT_VERSION)/$(SDK_HOST_ID)/$(BOARD)/$(SDK_KEY)
-  SDK_NAME      := $(BOARD)-$(SDK_KEY)_sdk-buildroot.tar.gz
-  SDK_ARCHIVE   := $(SDK_CACHE_DIR)/$(SDK_NAME)
-  SDK_CHECKSUM  := $(SDK_ARCHIVE).sha256
-  SDK_METADATA  := $(SDK_CACHE_DIR)/metadata
-endif
-
 # Buildroot invocation helper
 define buildroot
   $(MAKE) -C "$(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)" O="$(BOARD_DIR)" \
     BR2_REPRODUCIBLE=y BR2_EXTERNAL="$(CURDIR)" \
     BR2_CCACHE_DIR="$(CCACHE_DIR)" BR2_DL_DIR="$(DOWNLOAD_DIR)" \
-    SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
-    TPMDD_SDK_ARCHIVE="$(SDK_ARCHIVE)" TPMDD_VERSION="$(TPMDD_VERSION)" \
+    SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" TPMDD_VERSION="$(TPMDD_VERSION)" \
     $(1)
 endef
 
@@ -85,7 +54,7 @@ ifneq ($(filter-out default help list clean download,$(MAKECMDGOALS)),)
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
 endif
-.PHONY: default help list download dependencies sdk configure build burn qemu ssh clean
+.PHONY: default help list download dependencies configure build burn qemu ssh clean
 
 default: help
 
@@ -122,33 +91,7 @@ dependencies:
 		exit 1
 	fi
 
-sdk: ## Build or verify the cached <BOARD> SDK
-	@BOARD="$(BOARD)" \
-	SDK_DEFCONFIG="$(SDK_DEFCONFIG)" \
-	SDK_HOST_ID="$(SDK_HOST_ID)" \
-	SDK_HOST_LIBC="$(SDK_HOST_LIBC)" \
-	SDK_HOST_CC="$(SDK_HOST_CC)" \
-	SDK_HOST_BINUTILS="$(SDK_HOST_BINUTILS)" \
-	SDK_CACHE_DIR="$(SDK_CACHE_DIR)" \
-	SDK_ARCHIVE="$(SDK_ARCHIVE)" \
-	SDK_CHECKSUM="$(SDK_CHECKSUM)" \
-	SDK_METADATA="$(SDK_METADATA)" \
-	SDK_KEY="$(SDK_KEY)" \
-	PATCH_STAMP="$(PATCH_STAMP)" \
-	SDK_BUILD_DIR="$(SDK_BUILD_DIR)" \
-	SDK_NAME="$(SDK_NAME)" \
-	BUILDROOT_VERSION="$(BUILDROOT_VERSION)" \
-	BUILDROOT_HASH="$(BUILDROOT_HASH)" \
-	SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
-	BOARD_DIR="$(BOARD_DIR)" \
-	CURDIR="$(CURDIR)" \
-	CCACHE_DIR="$(CCACHE_DIR)" \
-	DOWNLOAD_DIR="$(DOWNLOAD_DIR)" \
-	TPMDD_VERSION="$(TPMDD_VERSION)" \
-	MAKE="$(MAKE)" \
-	scripts/sdk.sh
-
-configure: sdk dependencies ## Run <BOARD>_defconfig with its cached SDK
+configure: dependencies ## Run <BOARD>_defconfig with the Bootlin toolchain
 	$(MAKE) "$(PATCH_STAMP)" BOARD="$(BOARD)"
 	@mkdir -p "$(BOARD_DIR)"
 	$(call buildroot,$(BOARD)_defconfig)
