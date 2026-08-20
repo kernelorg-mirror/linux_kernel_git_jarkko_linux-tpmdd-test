@@ -410,3 +410,19 @@ index f4102e3..dd61bc3 100755
      one_file="$(find "${dest}" -type f -print0 |LC_ALL=C sort -z |sed 's/\x0.*//')"
      touch -r "${one_file}" "${dest}.timestamp"
  }
+diff --git a/support/download/git b/support/download/git
+index fdc0060..fa9d65a 100755
+--- a/support/download/git
++++ b/support/download/git
+@@ -132,6 +132,11 @@ fi
+ 
+ _git remote set-url origin "'${uri}'"
+ 
++# Point HEAD away from the unborn default branch. Git 2.29+ refuses to
++# fetch into a checked-out branch, so 'cset:cset' never creates
++# refs/heads/<cset> for names such as master.
++_git symbolic-ref HEAD refs/heads/buildroot-dl
++
+ printf "Fetching all references\n"
+ _git fetch "${@}" origin
+ _git fetch "${@}" origin -t -f
