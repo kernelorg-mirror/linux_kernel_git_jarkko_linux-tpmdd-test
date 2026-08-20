@@ -18,7 +18,7 @@ SOURCE_DATE_EPOCH		?= 1735689600
 # Directories
 OUTPUT_DIR			?= build
 OUTPUT_DIR_ABS			:= $(abspath $(OUTPUT_DIR))
-BOARD_DIR			:= $(OUTPUT_DIR_ABS)/$(BOARD)
+BOARD_DIR			:= $(abspath $(OUTPUT_DIR)/$(BOARD))
 CACHE_DIR			:= $(HOME)/.cache/tpmdd
 DOWNLOAD_DIR			:= $(CACHE_DIR)/download
 CCACHE_DIR			:= $(CACHE_DIR)/ccache
@@ -39,19 +39,16 @@ BUILDROOT_SRC_DIR		:= $(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
 SDK_DIR				:= $(CACHE_DIR)/sdk
 SDK_CACHE_DIR			:= $(SDK_DIR)/$(BUILDROOT_VERSION)
 SDK_ROOT			= $(SDK_CACHE_DIR)/$(1)/$(1)-tpmdd-linux-gnu_sdk-buildroot
-SDK_BUILD_DIR			:= $(OUTPUT_DIR_ABS)/sdk/$(BUILDROOT_VERSION)
+SDK_BUILD_DIR			:= $(abspath $(OUTPUT_DIR))/sdk/$(BUILDROOT_VERSION)
 SDK_SRC_DIR			:= $(SDK_BUILD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
 SDK_ARCHS			:= $(patsubst sdk/%_defconfig,%,$(wildcard sdk/*_defconfig))
 ifdef BOARD
 ifeq ($(wildcard configs/$(BOARD)_defconfig),)
 $(error unknown BOARD=$(BOARD); see `make list`)
 endif
-BOARD_KCONFIG			:= $(file < configs/$(BOARD)_defconfig)
-ifneq ($(filter BR2_x86_64=y,$(BOARD_KCONFIG)),)
-SDK_ARCH := x86_64
-else ifneq ($(filter BR2_aarch64=y,$(BOARD_KCONFIG)),)
-SDK_ARCH := aarch64
-else
+SDK_ARCH := $(strip $(if $(filter BR2_x86_64=y,$(file < configs/$(BOARD)_defconfig)),x86_64,\
+	$(if $(filter BR2_aarch64=y,$(file < configs/$(BOARD)_defconfig)),aarch64)))
+ifeq ($(SDK_ARCH),)
 $(error configs/$(BOARD)_defconfig must select BR2_x86_64 or BR2_aarch64)
 endif
 else
@@ -101,7 +98,7 @@ $(1).$(3):
 	touch "$$@"
 endef
 
-.PHONY: default help list download dependencies sdk prune-sdk-scratch clean-sdk configure build install-virtd burn ssh clean
+.PHONY: default help list download dependencies sdk clean-sdk configure build install-virtd burn ssh clean lint
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -132,13 +129,6 @@ $(SDK_UNPACK_STAMP): $(BUILDROOT_TARBALL)
 	tar -xf "$(BUILDROOT_TARBALL)" --strip-components=1 -C "$(SDK_SRC_DIR)"
 	touch "$@"
 
-define sdk_buildroot
-  $(MAKE) -C "$(SDK_SRC_DIR)" O="$(SDK_BUILD_DIR)/build/$(1)" \
-    BR2_DL_DIR="$(BUILDROOT_DL_DIR)" BR2_CCACHE_DIR="$(CCACHE_DIR)" \
-    SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
-    $(2)
-endef
-
 define sdk_rules
 .PHONY: sdk-$(1)
 
@@ -146,8 +136,14 @@ sdk-$(1): $(SDK_CACHE_DIR)/.stamp/$(1)/install
 
 $(SDK_BUILD_DIR)/.stamp/$(1)/build: $(SDK_UNPACK_STAMP) $(CURDIR)/sdk/$(1)_defconfig
 	mkdir -p "$(SDK_BUILD_DIR)/build/$(1)" "$(SDK_BUILD_DIR)/.stamp/$(1)"
-	$(call sdk_buildroot,$(1),defconfig DEFCONFIG="$(CURDIR)/sdk/$(1)_defconfig")
-	$(call sdk_buildroot,$(1),sdk)
+	$(MAKE) -C "$(SDK_SRC_DIR)" O="$(SDK_BUILD_DIR)/build/$(1)" \
+		BR2_DL_DIR="$(BUILDROOT_DL_DIR)" BR2_CCACHE_DIR="$(CCACHE_DIR)" \
+		SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
+		defconfig DEFCONFIG="$(CURDIR)/sdk/$(1)_defconfig"
+	$(MAKE) -C "$(SDK_SRC_DIR)" O="$(SDK_BUILD_DIR)/build/$(1)" \
+		BR2_DL_DIR="$(BUILDROOT_DL_DIR)" BR2_CCACHE_DIR="$(CCACHE_DIR)" \
+		SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
+		sdk
 	touch "$(SDK_BUILD_DIR)/.stamp/$(1)/build"
 
 # Install stamp lives in the cache and depends only on the defconfig, so a
@@ -161,10 +157,10 @@ $(SDK_CACHE_DIR)/.stamp/$(1)/install: $(CURDIR)/sdk/$(1)_defconfig
 	fi
 	$(MAKE) "$(SDK_BUILD_DIR)/.stamp/$(1)/build"
 	tarball="$$$$(echo "$(SDK_BUILD_DIR)/build/$(1)/images/"*_sdk-buildroot.tar.gz)"
-	if [ ! -f "$$$$tarball" ]; then
-		echo "error: no SDK tarball in $(SDK_BUILD_DIR)/build/$(1)/images" >&2
-		exit 1
-	fi
+	test -f "$$$$tarball" || { \
+		echo "error: no SDK tarball in $(SDK_BUILD_DIR)/build/$(1)/images" >&2; \
+		exit 1; \
+	}
 	topdir="$$$${tarball##*/}"; topdir="$$$${topdir%.tar.gz}"
 	rm -rf "$(SDK_CACHE_DIR)/$(1)"
 	mkdir -p "$(SDK_CACHE_DIR)/$(1)"
@@ -176,10 +172,7 @@ $(SDK_CACHE_DIR)/.stamp/$(1)/install: $(CURDIR)/sdk/$(1)_defconfig
 endef
 $(foreach arch,$(SDK_ARCHS),$(eval $(call sdk_rules,$(arch))))
 
-prune-sdk-scratch:
-	rm -rf "$(SDK_CACHE_DIR)/src" "$(SDK_CACHE_DIR)/build"
-
-sdk: dependencies prune-sdk-scratch $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
+sdk: dependencies $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
 
 dependencies: ## Check required host tools
 	@missing=()
@@ -232,8 +225,14 @@ burn: build ## Write image to DEVICE
 	fi
 	sudo dd if="$$image" of="$(DEVICE)" bs=1M status=progress oflag=sync
 
-clean: prune-sdk-scratch ## Remove build artifacts
-	rm -rf "$(OUTPUT_DIR_ABS)"
+clean: ## Remove build artifacts
+	rm -rf "$(abspath $(OUTPUT_DIR))" "$(SDK_CACHE_DIR)/src" "$(SDK_CACHE_DIR)/build"
 
 clean-sdk: ## Remove cached SDK toolchains
 	rm -rf "$(SDK_DIR)"
+
+lint: ## Run shellcheck
+	mapfile -t sh_files < <(git ls-files '*.sh')
+	if [ "$${#sh_files[@]}" -gt 0 ]; then
+		shellcheck -x "$${sh_files[@]}"
+	fi
