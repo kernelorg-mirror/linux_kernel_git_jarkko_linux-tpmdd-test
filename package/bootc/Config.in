@@ -1,9 +1,16 @@
 config BR2_PACKAGE_BOOTC
 	bool "bootc"
 	depends on BR2_PACKAGE_HOST_RUSTC_ARCH_SUPPORTS
-	depends on BR2_PACKAGE_LIBOSTREE
-	depends on BR2_PACKAGE_COMPOSEFS
 	depends on BR2_INIT_SYSTEMD
+	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libostree
+	depends on BR2_TOOLCHAIN_HAS_THREADS # libostree, composefs
+	depends on BR2_USE_WCHAR # libostree
+	depends on BR2_USE_MMU # libostree, composefs
+	depends on !BR2_STATIC_LIBS # libostree, composefs
+	depends on !BR2_TOOLCHAIN_USES_MUSL # libostree
+	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_8 # libostree
+	select BR2_PACKAGE_COMPOSEFS
+	select BR2_PACKAGE_LIBOSTREE
 	select BR2_PACKAGE_OPENSSL
 	select BR2_PACKAGE_ZSTD
 	help
@@ -13,8 +20,10 @@ config BR2_PACKAGE_BOOTC
 
 	  https://github.com/bootc-dev/bootc
 
-comment "bootc needs a systemd init"
+comment "bootc needs systemd and a uClibc or glibc toolchain w/ threads, dynamic library, wchar, headers >= 5.8"
 	depends on BR2_PACKAGE_HOST_RUSTC_ARCH_SUPPORTS
-	depends on BR2_PACKAGE_LIBOSTREE
-	depends on BR2_PACKAGE_COMPOSEFS
-	depends on !BR2_INIT_SYSTEMD
+	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS
+	depends on BR2_USE_MMU
+	depends on !BR2_INIT_SYSTEMD || !BR2_TOOLCHAIN_HAS_THREADS \
+		|| BR2_STATIC_LIBS || !BR2_USE_WCHAR || BR2_TOOLCHAIN_USES_MUSL \
+		|| !BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_8

@@ -9,13 +9,8 @@ TOOLBX_SOURCE = toolbox-$(TOOLBX_VERSION)-vendored.tar.xz
 TOOLBX_SITE = https://github.com/containers/toolbox/releases/download/$(TOOLBX_VERSION)
 TOOLBX_LICENSE = Apache-2.0
 TOOLBX_LICENSE_FILES = COPYING
-TOOLBX_DEPENDENCIES = shadow
-
-TOOLBX_GOMOD = github.com/containers/toolbox
-TOOLBX_BIN_NAME = toolbox
-
-# Upstream release archive is already vendored; keep it as xz.
-TOOLBX_DOWNLOAD_POST_PROCESS =
+TOOLBX_DEPENDENCIES = host-go shadow
+TOOLBX_EXCLUDES = .env .env.invalid
 
 # ELF interpreter path on the target. At runtime inside a toolbox container
 # the host root is visible under /run/host, so the interpreter and rpath are
@@ -56,4 +51,4 @@ define TOOLBX_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/etc/profile.d/toolbox.sh
 endef
 
-$(eval $(golang-package))
+$(eval $(generic-package))
