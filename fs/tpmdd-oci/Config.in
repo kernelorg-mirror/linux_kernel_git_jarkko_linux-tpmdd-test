@@ -1,0 +1,6 @@
+config BR2_TARGET_ROOTFS_TPMDD_OCI
+	bool "tpmdd oci image"
+	help
+	  Pack the bootc root filesystem as an OCI archive (image.tar)
+	  using host sloci-image. Gzip layers, bootc labels, and
+	  SOURCE_DATE_EPOCH are applied by a patched sloci.
