@@ -9,7 +9,7 @@ SHELL := bash
 .ONESHELL:
 .SHELLFLAGS := -euo pipefail -c
 
-REQUIRED_HOST_TOOLS		:= curl flock sha256sum wget xz
+REQUIRED_HOST_TOOLS		:= curl flock sha256sum virt-install virsh wget xz
 
 # Versions
 TPMDD_VERSION			?= 2026.08
@@ -101,7 +101,7 @@ $(1).$(3):
 	touch "$$@"
 endef
 
-.PHONY: default help list download dependencies sdk prune-sdk-scratch clean-sdk configure build qemu burn ssh clean
+.PHONY: default help list download dependencies sdk prune-sdk-scratch clean-sdk configure build install-virtd burn ssh clean
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -110,7 +110,7 @@ default: help
 
 $(eval $(call download,$(BUILDROOT_TARBALL),$(BUILDROOT_URL),$(BUILDROOT_HASH)))
 
-ifneq ($(filter configure build qemu burn ssh,$(MAKECMDGOALS)),)
+ifneq ($(filter configure build install-virtd burn ssh,$(MAKECMDGOALS)),)
   ifndef BOARD
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
@@ -207,9 +207,10 @@ configure: dependencies $(SDK_INSTALL_STAMP) $(PATCH_STAMP) ## Run <BOARD>_defco
 build: configure ## Build <BOARD>
 	$(call buildroot,BR2_CCACHE=y)
 
-qemu: ## Boot <BOARD> in QEMU
+install-virtd: ## Define qemu:///session domain tpmdd-<hash> for <BOARD>
 	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT))
-	exec "$(BOARD_DIR)/images/qemu-exec.sh"
+	exec "$(CURDIR)/scripts/install-virtd.sh" \
+		"$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)" "$(SDK_ARCH)"
 
 ssh: ## Open an SSH session to <BOARD>
 	$(call require_artifact,$(BOARD_DIR)/images/ssh_config)

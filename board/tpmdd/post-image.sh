@@ -322,6 +322,3 @@ SSH_DIR="${TARGET_DIR}/var/roothome/.ssh"
 sed -e "s|@IDENTITY_FILE@|${SSH_DIR}/id-rsa|g" \
   <"${BOARD_DIR}/ssh_config.in" \
   >"${BINARIES_DIR}/ssh_config"
-
-install -T -m 0755 "${BOARD_DIR}/qemu-exec.sh" \
-  "${BINARIES_DIR}/qemu-exec.sh"
