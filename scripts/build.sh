@@ -29,7 +29,6 @@ done
 
 "${CONTAINER}" run \
   -d \
-  --rm \
   --init \
   --cpus "${CONTAINER_CPUS}" \
   --memory "${CONTAINER_MEMORY}" \
