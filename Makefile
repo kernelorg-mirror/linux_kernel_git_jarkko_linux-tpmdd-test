@@ -29,6 +29,7 @@ BUILDROOT_URL			?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION
 BUILDROOT_DL_DIR		:= $(DOWNLOAD_DIR)/buildroot
 BUILDROOT_TARBALL		:= $(BUILDROOT_DL_DIR)/buildroot-$(BUILDROOT_VERSION).tar.xz
 BUILDROOT_PATCH			:= $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
+BUILDROOT_SRC_PATCHES		:= $(sort $(wildcard $(CURDIR)/patches/pkg-cargo/*.patch))
 BUILDROOT_SRC_DIR		:= $(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
 
 # SDK
@@ -169,13 +170,16 @@ $(foreach arch,$(SDK_ARCHS),$(eval $(call sdk_rules,$(arch))))
 
 sdk: $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
 
-$(PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH)
+$(PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH) $(BUILDROOT_SRC_PATCHES)
 	@echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
 	src_dir="$(BUILDROOT_SRC_DIR)"
 	rm -rf "$$src_dir"
 	mkdir -p "$$src_dir"
 	tar -xf "$(BUILDROOT_TARBALL)" --strip-components=1 -C "$$src_dir"
 	patch -d "$$src_dir" -p1 -i "$(BUILDROOT_PATCH)"
+	for p in $(BUILDROOT_SRC_PATCHES); do
+		patch -d "$$src_dir" -p1 -i "$$p"
+	done
 	mkdir -p "$(dir $@)"
 	touch "$@"
 
