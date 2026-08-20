@@ -7,12 +7,12 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 
 # Versions
-TPMDD_VERSION     ?= 2026.05.1
-BUILDROOT_VERSION ?= $(TPMDD_VERSION)
+TPMDD_VERSION     ?= 2026.08
+BUILDROOT_VERSION ?= 2026.08-rc1
 SOURCE_DATE_EPOCH ?= 1735689600
 
 # URLs and hashes
-BUILDROOT_HASH ?= ae7f706f087b9ae9083a10a587368dfbf53103c28bf81c2d690198dc4090cb58
+BUILDROOT_HASH ?= fbb78d7e07ca91cc4def0a0730a332e5bcf2234b59f3b0c151104e2dc79ff6fe
 BUILDROOT_URL  ?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
 
 # Directories

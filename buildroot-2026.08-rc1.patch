@@ -1,205 +1,11 @@
-diff --git a/package/dracut/dracut.mk b/package/dracut/dracut.mk
-index b40f618..cb5b464 100644
---- a/package/dracut/dracut.mk
-+++ b/package/dracut/dracut.mk
-@@ -33,6 +33,15 @@ define HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
- endef
- HOST_DRACUT_POST_INSTALL_HOOKS += HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
- 
-+ifeq ($(BR2_INIT_SYSTEMD),y)
-+define HOST_DRACUT_POST_INSTALL_SYSTEMD_MODULES
-+	mkdir -p $(HOST_DIR)/lib/dracut/modules.d
-+	cp -a $(@D)/modules.d/*systemd* \
-+		$(HOST_DIR)/lib/dracut/modules.d/
-+endef
-+HOST_DRACUT_POST_INSTALL_HOOKS += HOST_DRACUT_POST_INSTALL_SYSTEMD_MODULES
-+endif
-+
- ifeq ($(BR2_INIT_BUSYBOX),y)
- # Dracut does not support busybox init (systemd init is assumed to work
- # out of the box, though). It provides a busybox module, that does not
-diff --git a/package/linux-tools/linux-tool-selftests.mk.in b/package/linux-tools/linux-tool-selftests.mk.in
-index db7e4fa..75442f3 100644
---- a/package/linux-tools/linux-tool-selftests.mk.in
-+++ b/package/linux-tools/linux-tool-selftests.mk.in
-@@ -24,7 +24,8 @@ SELFTESTS_DEPENDENCIES = \
- SELFTESTS_MAKE_FLAGS = \
- 	$(LINUX_MAKE_FLAGS) \
- 	ARCH=$(SELFTESTS_ARCH) \
--	KHDR_DIR=$(LINUX_DIR)/usr/include
-+	KHDR_DIR=$(LINUX_DIR)/usr/include \
-+	TARGETS=tpm2
- 
- LINUX_TOOLS_BIN_ARCH_EXCLUDE += \
- 	/usr/lib/kselftests/tc-testing/
-diff --git a/package/pkg-cargo.mk b/package/pkg-cargo.mk
-index 47a6353..a9824ba 100644
---- a/package/pkg-cargo.mk
-+++ b/package/pkg-cargo.mk
-@@ -212,13 +212,8 @@ ifneq ($$($(2)_LICENSE),)
- $(2)_LICENSE += , vendored dependencies licenses probably not listed
- endif
- 
--# Note: in all the steps below, we "cd" into the build directory to
--# execute the "cargo" tool instead of passing $(@D)/Cargo.toml as the
--# manifest-path. Indeed while the latter seems to work, it in fact
--# breaks in subtle ways as the way cargo searches for its
--# configuration file is based (among other rules) on the current
--# directory. This means that if cargo is started outside of a package
--# directory, its configuration file will not be taken into account.
-+# Run cargo from / so hierarchical config under $HOME is not loaded.
-+# Package paths go through /proc/self/fd; vendor config via --config.
- #
- # Also, we pass:
- #  * --offline to prevent cargo from downloading anything: all
-@@ -234,29 +229,33 @@ endif
- ifndef $(2)_BUILD_CMDS
- ifeq ($(4),target)
- define $(2)_BUILD_CMDS
--	cd $$($$(PKG)_SRCDIR) && \
-+	exec 8<$$(@D) && \
-+	cd / && \
- 	$$(TARGET_MAKE_ENV) \
- 		$$(TARGET_CONFIGURE_OPTS) \
- 		$$(PKG_CARGO_ENV) \
- 		$$($(2)_CARGO_ENV) \
- 		cargo build \
-+			--config /proc/self/fd/8/.cargo/config.toml \
- 			--offline \
- 			$$(if $$(BR2_ENABLE_DEBUG),,--release) \
--			--manifest-path Cargo.toml \
-+			--manifest-path /proc/self/fd/8/$$($(2)_SUBDIR)/Cargo.toml \
- 			--locked \
- 			$$($(2)_CARGO_BUILD_OPTS)
- endef
- else # ifeq ($(4),target)
- define $(2)_BUILD_CMDS
--	cd $$($$(PKG)_SRCDIR) && \
-+	exec 8<$$(@D) && \
-+	cd / && \
- 	$$(HOST_MAKE_ENV) \
- 		$$(HOST_CONFIGURE_OPTS) \
- 		$$(HOST_PKG_CARGO_ENV) \
- 		$$($(2)_CARGO_ENV) \
- 		cargo build \
-+			--config /proc/self/fd/8/.cargo/config.toml \
- 			--offline \
- 			--release \
--			--manifest-path Cargo.toml \
-+			--manifest-path /proc/self/fd/8/$$($(2)_SUBDIR)/Cargo.toml \
- 			--locked \
- 			$$($(2)_CARGO_BUILD_OPTS)
- endef
-@@ -269,16 +268,18 @@ endif # ifndef $(2)_BUILD_CMDS
- #
- ifndef $(2)_INSTALL_TARGET_CMDS
- define $(2)_INSTALL_TARGET_CMDS
--	cd $$($$(PKG)_SRCDIR) && \
-+	exec 8<$$(@D) && \
-+	cd / && \
- 	$$(TARGET_MAKE_ENV) \
- 		$$(TARGET_CONFIGURE_OPTS) \
- 		$$(PKG_CARGO_ENV) \
- 		$$($(2)_CARGO_ENV) \
- 		cargo install \
-+			--config /proc/self/fd/8/.cargo/config.toml \
- 			--offline \
- 			--root $$(TARGET_DIR)/usr/ \
- 			--bins \
--			--path ./ \
-+			--path /proc/self/fd/8/$$($(2)_SUBDIR)/ \
- 			--no-track \
- 			--force \
- 			--locked \
-@@ -289,16 +290,18 @@ endif
- 
- ifndef $(2)_INSTALL_CMDS
- define $(2)_INSTALL_CMDS
--	cd $$($$(PKG)_SRCDIR) && \
-+	exec 8<$$(@D) && \
-+	cd / && \
- 	$$(HOST_MAKE_ENV) \
- 		$$(HOST_CONFIGURE_OPTS) \
- 		$$(HOST_PKG_CARGO_ENV) \
- 		$$($(2)_CARGO_ENV) \
- 		cargo install \
-+			--config /proc/self/fd/8/.cargo/config.toml \
- 			--offline \
- 			--root $$(HOST_DIR) \
- 			--bins \
--			--path ./ \
-+			--path /proc/self/fd/8/$$($(2)_SUBDIR)/ \
- 			--no-track \
- 			--force \
- 			--locked \
-diff --git a/package/strace/strace.mk b/package/strace/strace.mk
-index 5f39bba..1fd5ef9 100644
---- a/package/strace/strace.mk
-+++ b/package/strace/strace.mk
-@@ -12,6 +12,10 @@ STRACE_LICENSE_FILES = COPYING LGPL-2.1-or-later
- STRACE_CPE_ID_VALID = YES
- STRACE_CONF_OPTS = --enable-mpers=no
- 
-+# strace 7.0 does not handle the newer io_uring_buf_reg layout from Linux 7.0
-+# headers, so use its bundled Linux UAPI headers.
-+STRACE_CONF_OPTS += --enable-bundled=yes
-+
- ifeq ($(BR2_PACKAGE_LIBUNWIND),y)
- STRACE_DEPENDENCIES += libunwind
- STRACE_CONF_OPTS += --with-libunwind
-diff --git a/package/systemd/Config.in b/package/systemd/Config.in
-index 62dc3f5..39feafd 100644
---- a/package/systemd/Config.in
-+++ b/package/systemd/Config.in
-@@ -112,7 +112,7 @@ config BR2_PACKAGE_PROVIDES_UDEV
- 
- config BR2_PACKAGE_SYSTEMD_BOOT
- 	bool "systemd-boot"
--	depends on BR2_i386 || BR2_x86_64
-+	depends on BR2_i386 || BR2_x86_64 || BR2_aarch64
- 	select BR2_PACKAGE_GNU_EFI
- 	select BR2_PACKAGE_SYSTEMD_EFI
- 	help
-@@ -160,6 +160,7 @@ config BR2_PACKAGE_SYSTEMD_ANALYZE
- config BR2_PACKAGE_SYSTEMD_BOOT_EFI_ARCH
- 	string
- 	default "ia32"  if BR2_i386
-+	default "aa64"  if BR2_aarch64
- 	default "x64"   if BR2_x86_64
- 	depends on BR2_PACKAGE_SYSTEMD_BOOT
- 
-diff --git a/support/download/cargo-post-process b/support/download/cargo-post-process
-index b0e59ad..b2af511 100755
---- a/support/download/cargo-post-process
-+++ b/support/download/cargo-post-process
-@@ -28,16 +28,18 @@ fi
- 
- post_process_unpack "${base_name}" "${output}"
- 
--# Do the Cargo vendoring
-+# Vendor with cargo run from / (avoid hierarchical ~/.cargo configs).
- pushd "${base_name}" > /dev/null
-+pkg_dir=$(pwd)
- 
- # Create the local .cargo/config.toml with vendor info
- mkdir -p .cargo/
- mkdir -p "${CARGO_HOME}"
- flock "${CARGO_HOME}"/.br-lock \
--cargo vendor \
--    --manifest-path "${manifest}" \
--    --locked VENDOR \
-+env -C / cargo vendor \
-+    --manifest-path "${pkg_dir}/${manifest}" \
-+    --locked "${pkg_dir}/VENDOR" \
-+    | sed 's|^directory = ".*"|directory = "VENDOR"|' \
-     > .cargo/config.toml
- 
- # "cargo vendor' outputs on stderr a message directing to add some data
 diff --git a/boot/edk2/Config.in b/boot/edk2/Config.in
 index 2620c79..390e3e5 100644
 --- a/boot/edk2/Config.in
 +++ b/boot/edk2/Config.in
-@@ -109,0 +110,8 @@ endchoice
+@@ -107,6 +107,14 @@ comment "QEMU SBSA depends on ATF not using EDK2 as BL33"
+ 
+ endchoice
+ 
 +config BR2_TARGET_EDK2_RPI
 +	bool "Raspberry Pi 3 and 4 firmware"
 +	depends on BR2_aarch64
@@ -208,17 +14,37 @@ index 2620c79..390e3e5 100644
 +	  Build additional EDK2 firmware images for Raspberry Pi 3 and
 +	  Raspberry Pi 4 platforms.
 +
+ config BR2_TARGET_EDK2_OVMF_DEBUG_ON_SERIAL
+ 	bool "OVMF Debug on Serial"
+ 	depends on BR2_ENABLE_DEBUG
 diff --git a/boot/edk2/edk2.mk b/boot/edk2/edk2.mk
-index 11d9b90..bb171bc 100644
+index 11d9b90..347c88f 100644
 --- a/boot/edk2/edk2.mk
 +++ b/boot/edk2/edk2.mk
-@@ -126,0 +127,5 @@ endif
+@@ -124,6 +124,11 @@ EDK2_BUILD_DIR = $(EDK2_PLATFORM_NAME)
+ 
+ endif
+ 
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +EDK2_DEPENDENCIES += edk2-non-osi
 +EDK2_PACKAGES_PATHS += $(STAGING_DIR)/usr/share/edk2-non-osi
 +endif
 +
-@@ -163,0 +169,20 @@ endef
+ EDK2_BASETOOLS_OPTS = \
+ 	EXTRA_LDFLAGS="$(HOST_LDFLAGS)" \
+ 	EXTRA_OPTFLAGS="$(HOST_CPPFLAGS)"
+@@ -142,6 +147,7 @@ EDK2_BUILD_ENV += \
+ 	PYTHON_COMMAND=$(HOST_DIR)/bin/python3 \
+ 	IASL_PREFIX=$(HOST_DIR)/bin/ \
+ 	NASM_PREFIX=$(HOST_DIR)/bin/ \
++	GCC5_BIN=$(TARGET_CROSS) \
+ 	GCC5_$(EDK2_ARCH)_PREFIX=$(TARGET_CROSS)
+ 
+ EDK2_BUILD_OPTS += \
+@@ -161,8 +167,40 @@ define EDK2_BUILD_CMDS
+ 	build $(EDK2_BUILD_OPTS) all
+ endef
+ 
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +EDK2_RPI_BUILD_OPTS = \
 +	-t GCC5 \
@@ -239,7 +65,10 @@ index 11d9b90..bb171bc 100644
 +EDK2_POST_BUILD_HOOKS += EDK2_BUILD_RPI
 +endif
 +
-@@ -167,0 +193,12 @@ endef
+ define EDK2_INSTALL_IMAGES_CMDS
+ 	cp -f $(@D)/Build/$(EDK2_BUILD_DIR)/$(EDK2_BUILD_TYPE)_GCC5/FV/*.fd $(BINARIES_DIR)
+ endef
+ 
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +define EDK2_INSTALL_RPI_IMAGES
 +	$(INSTALL) -D -m 0644 \
@@ -252,11 +81,45 @@ index 11d9b90..bb171bc 100644
 +EDK2_POST_INSTALL_IMAGES_HOOKS += EDK2_INSTALL_RPI_IMAGES
 +endif
 +
+ $(eval $(generic-package))
+diff --git a/package/dracut/dracut.mk b/package/dracut/dracut.mk
+index 0bf7553..440bd46 100644
+--- a/package/dracut/dracut.mk
++++ b/package/dracut/dracut.mk
+@@ -11,6 +11,9 @@ DRACUT_LICENSE_FILES = COPYING
+ DRACUT_CPE_ID_VALID = YES
+ 
+ HOST_DRACUT_DEPENDENCIES = host-pkgconf host-kmod host-cross-ldd
++HOST_DRACUT_MAKE_ENV = \
++	CARGO_HOME=$(BR_CARGO_HOME) \
++	LDFLAGS="$(HOST_LDFLAGS)"
+ HOST_DRACUT_INSTALL_OPTS = systemdsystemunitdir="" install
+ 
+ define HOST_DRACUT_POST_INSTALL_WRAPPER_SCRIPT
+@@ -33,6 +36,15 @@ define HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
+ endef
+ HOST_DRACUT_POST_INSTALL_HOOKS += HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
+ 
++ifeq ($(BR2_INIT_SYSTEMD),y)
++define HOST_DRACUT_POST_INSTALL_SYSTEMD_MODULES
++	mkdir -p $(HOST_DIR)/lib/dracut/modules.d
++	cp -a $(@D)/modules.d/*systemd* \
++		$(HOST_DIR)/lib/dracut/modules.d/
++endef
++HOST_DRACUT_POST_INSTALL_HOOKS += HOST_DRACUT_POST_INSTALL_SYSTEMD_MODULES
++endif
++
+ ifeq ($(BR2_INIT_BUSYBOX),y)
+ # Dracut does not support busybox init (systemd init is assumed to work
+ # out of the box, though). It provides a busybox module, that does not
 diff --git a/package/edk2-non-osi/edk2-non-osi.mk b/package/edk2-non-osi/edk2-non-osi.mk
 index 57c8fca..6069e80 100644
 --- a/package/edk2-non-osi/edk2-non-osi.mk
 +++ b/package/edk2-non-osi/edk2-non-osi.mk
-@@ -17,0 +18,8 @@ EDK2_NON_OSI_DIRS += Silicon/Marvell/Armada7k8k/DeviceTree
+@@ -15,6 +15,14 @@ EDK2_NON_OSI_LICENSE += BSD-2-Clause-Patent (Marvell Armada)
+ EDK2_NON_OSI_LICENSE_FILES += Silicon/Marvell/Armada7k8k/DeviceTree/Armada80x0McBin.inf
+ EDK2_NON_OSI_DIRS += Silicon/Marvell/Armada7k8k/DeviceTree
+ 
 +EDK2_NON_OSI_LICENSE += , BSD-3-Clause (Raspberry Pi TF-A)
 +EDK2_NON_OSI_LICENSE_FILES += \
 +	Platform/RaspberryPi/RPi3/TrustedFirmware/License.txt \
@@ -265,8 +128,11 @@ index 57c8fca..6069e80 100644
 +	Platform/RaspberryPi/RPi3/TrustedFirmware \
 +	Platform/RaspberryPi/RPi4/TrustedFirmware
 +
+ # There is nothing to build for edk2-non-osi. All we need to do is to copy
+ # the selected description files to staging, for other packages to build with.
+ define EDK2_NON_OSI_INSTALL_STAGING_CMDS
 diff --git a/package/libostree/Config.in b/package/libostree/Config.in
-index 49eed651..d0bec81f 100644
+index 49eed65..d0bec81 100644
 --- a/package/libostree/Config.in
 +++ b/package/libostree/Config.in
 @@ -1,27 +1,34 @@
@@ -313,7 +179,7 @@ index 49eed651..d0bec81f 100644
  	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS
  	depends on BR2_USE_MMU
 diff --git a/package/libostree/libostree.hash b/package/libostree/libostree.hash
-index d4645c59..94912c8a 100644
+index d4645c5..94912c8 100644
 --- a/package/libostree/libostree.hash
 +++ b/package/libostree/libostree.hash
 @@ -1,3 +1,5 @@
@@ -325,7 +191,7 @@ index d4645c59..94912c8a 100644
 +# Hash for license file
  sha256  b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c  COPYING
 diff --git a/package/libostree/libostree.mk b/package/libostree/libostree.mk
-index a737dc04..6ff53cf3 100644
+index a737dc0..6ff53cf 100644
 --- a/package/libostree/libostree.mk
 +++ b/package/libostree/libostree.mk
 @@ -4,24 +4,51 @@
@@ -453,3 +319,159 @@ index a737dc04..6ff53cf3 100644
 +LIBOSTREE_POST_INSTALL_TARGET_HOOKS += LIBOSTREE_INSTALL_DRACUT_MODULE
  
  $(eval $(autotools-package))
+diff --git a/package/linux-tools/linux-tool-selftests.mk.in b/package/linux-tools/linux-tool-selftests.mk.in
+index db7e4fa..75442f3 100644
+--- a/package/linux-tools/linux-tool-selftests.mk.in
++++ b/package/linux-tools/linux-tool-selftests.mk.in
+@@ -24,7 +24,8 @@ SELFTESTS_DEPENDENCIES = \
+ SELFTESTS_MAKE_FLAGS = \
+ 	$(LINUX_MAKE_FLAGS) \
+ 	ARCH=$(SELFTESTS_ARCH) \
+-	KHDR_DIR=$(LINUX_DIR)/usr/include
++	KHDR_DIR=$(LINUX_DIR)/usr/include \
++	TARGETS=tpm2
+ 
+ LINUX_TOOLS_BIN_ARCH_EXCLUDE += \
+ 	/usr/lib/kselftests/tc-testing/
+diff --git a/package/pkg-cargo.mk b/package/pkg-cargo.mk
+index 47a6353..a9824ba 100644
+--- a/package/pkg-cargo.mk
++++ b/package/pkg-cargo.mk
+@@ -212,13 +212,8 @@ ifneq ($$($(2)_LICENSE),)
+ $(2)_LICENSE += , vendored dependencies licenses probably not listed
+ endif
+ 
+-# Note: in all the steps below, we "cd" into the build directory to
+-# execute the "cargo" tool instead of passing $(@D)/Cargo.toml as the
+-# manifest-path. Indeed while the latter seems to work, it in fact
+-# breaks in subtle ways as the way cargo searches for its
+-# configuration file is based (among other rules) on the current
+-# directory. This means that if cargo is started outside of a package
+-# directory, its configuration file will not be taken into account.
++# Run cargo from / so hierarchical config under $HOME is not loaded.
++# Package paths go through /proc/self/fd; vendor config via --config.
+ #
+ # Also, we pass:
+ #  * --offline to prevent cargo from downloading anything: all
+@@ -234,29 +229,33 @@ endif
+ ifndef $(2)_BUILD_CMDS
+ ifeq ($(4),target)
+ define $(2)_BUILD_CMDS
+-	cd $$($$(PKG)_SRCDIR) && \
++	exec 8<$$(@D) && \
++	cd / && \
+ 	$$(TARGET_MAKE_ENV) \
+ 		$$(TARGET_CONFIGURE_OPTS) \
+ 		$$(PKG_CARGO_ENV) \
+ 		$$($(2)_CARGO_ENV) \
+ 		cargo build \
++			--config /proc/self/fd/8/.cargo/config.toml \
+ 			--offline \
+ 			$$(if $$(BR2_ENABLE_DEBUG),,--release) \
+-			--manifest-path Cargo.toml \
++			--manifest-path /proc/self/fd/8/$$($(2)_SUBDIR)/Cargo.toml \
+ 			--locked \
+ 			$$($(2)_CARGO_BUILD_OPTS)
+ endef
+ else # ifeq ($(4),target)
+ define $(2)_BUILD_CMDS
+-	cd $$($$(PKG)_SRCDIR) && \
++	exec 8<$$(@D) && \
++	cd / && \
+ 	$$(HOST_MAKE_ENV) \
+ 		$$(HOST_CONFIGURE_OPTS) \
+ 		$$(HOST_PKG_CARGO_ENV) \
+ 		$$($(2)_CARGO_ENV) \
+ 		cargo build \
++			--config /proc/self/fd/8/.cargo/config.toml \
+ 			--offline \
+ 			--release \
+-			--manifest-path Cargo.toml \
++			--manifest-path /proc/self/fd/8/$$($(2)_SUBDIR)/Cargo.toml \
+ 			--locked \
+ 			$$($(2)_CARGO_BUILD_OPTS)
+ endef
+@@ -269,16 +268,18 @@ endif # ifndef $(2)_BUILD_CMDS
+ #
+ ifndef $(2)_INSTALL_TARGET_CMDS
+ define $(2)_INSTALL_TARGET_CMDS
+-	cd $$($$(PKG)_SRCDIR) && \
++	exec 8<$$(@D) && \
++	cd / && \
+ 	$$(TARGET_MAKE_ENV) \
+ 		$$(TARGET_CONFIGURE_OPTS) \
+ 		$$(PKG_CARGO_ENV) \
+ 		$$($(2)_CARGO_ENV) \
+ 		cargo install \
++			--config /proc/self/fd/8/.cargo/config.toml \
+ 			--offline \
+ 			--root $$(TARGET_DIR)/usr/ \
+ 			--bins \
+-			--path ./ \
++			--path /proc/self/fd/8/$$($(2)_SUBDIR)/ \
+ 			--no-track \
+ 			--force \
+ 			--locked \
+@@ -289,16 +290,18 @@ endif
+ 
+ ifndef $(2)_INSTALL_CMDS
+ define $(2)_INSTALL_CMDS
+-	cd $$($$(PKG)_SRCDIR) && \
++	exec 8<$$(@D) && \
++	cd / && \
+ 	$$(HOST_MAKE_ENV) \
+ 		$$(HOST_CONFIGURE_OPTS) \
+ 		$$(HOST_PKG_CARGO_ENV) \
+ 		$$($(2)_CARGO_ENV) \
+ 		cargo install \
++			--config /proc/self/fd/8/.cargo/config.toml \
+ 			--offline \
+ 			--root $$(HOST_DIR) \
+ 			--bins \
+-			--path ./ \
++			--path /proc/self/fd/8/$$($(2)_SUBDIR)/ \
+ 			--no-track \
+ 			--force \
+ 			--locked \
+diff --git a/package/strace/strace.mk b/package/strace/strace.mk
+index a068893..1e7373c 100644
+--- a/package/strace/strace.mk
++++ b/package/strace/strace.mk
+@@ -12,6 +12,10 @@ STRACE_LICENSE_FILES = COPYING LGPL-2.1-or-later
+ STRACE_CPE_ID_VALID = YES
+ STRACE_CONF_OPTS = --enable-mpers=no
+ 
++# strace 7.0 does not yet handle the newer io_uring_buf_reg layout
++# from the toolchain headers, so force its bundled linux UAPI headers.
++STRACE_CONF_OPTS += --enable-bundled=yes
++
+ ifeq ($(BR2_PACKAGE_LIBUNWIND),y)
+ STRACE_DEPENDENCIES += libunwind
+ STRACE_CONF_OPTS += --with-libunwind
+diff --git a/support/download/cargo-post-process b/support/download/cargo-post-process
+index b0e59ad..b2af511 100755
+--- a/support/download/cargo-post-process
++++ b/support/download/cargo-post-process
+@@ -28,16 +28,18 @@ fi
+ 
+ post_process_unpack "${base_name}" "${output}"
+ 
+-# Do the Cargo vendoring
++# Vendor with cargo run from / (avoid hierarchical ~/.cargo configs).
+ pushd "${base_name}" > /dev/null
++pkg_dir=$(pwd)
+ 
+ # Create the local .cargo/config.toml with vendor info
+ mkdir -p .cargo/
+ mkdir -p "${CARGO_HOME}"
+ flock "${CARGO_HOME}"/.br-lock \
+-cargo vendor \
+-    --manifest-path "${manifest}" \
+-    --locked VENDOR \
++env -C / cargo vendor \
++    --manifest-path "${pkg_dir}/${manifest}" \
++    --locked "${pkg_dir}/VENDOR" \
++    | sed 's|^directory = ".*"|directory = "VENDOR"|' \
+     > .cargo/config.toml
+ 
+ # "cargo vendor' outputs on stderr a message directing to add some data
