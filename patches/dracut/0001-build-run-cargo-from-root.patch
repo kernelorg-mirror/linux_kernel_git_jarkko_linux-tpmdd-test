@@ -1,0 +1,5 @@
+--- a/Makefile
++++ b/Makefile
+@@ -115 +115 @@
+-	cargo --offline build --release --manifest-path src/dracut-cpio/Cargo.toml
++	cd / && cargo --offline build --release --manifest-path $(CURDIR)/src/dracut-cpio/Cargo.toml

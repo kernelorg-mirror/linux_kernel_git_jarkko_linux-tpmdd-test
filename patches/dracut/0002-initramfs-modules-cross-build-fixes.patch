@@ -1,0 +1,44 @@
+--- a/modules.d/70overlayfs/module-setup.sh
++++ b/modules.d/70overlayfs/module-setup.sh
+@@ -1,7 +1,6 @@
+ #!/bin/bash
+ 
+ check() {
+-    require_kernel_modules overlay || return 1
+     return 255
+ }
+ 
+--- a/modules.d/77dracut-systemd/dracut-pre-mount.service
++++ b/modules.d/77dracut-systemd/dracut-pre-mount.service
+@@ -5,7 +5,8 @@ Description=dracut pre-mount hook
+ Documentation=man:dracut-pre-mount.service(8) man:dracut.bootup(7)
+ DefaultDependencies=no
+ Before=initrd-root-fs.target sysroot.mount systemd-fsck-root.service
+-After=basic.target dracut-initqueue.service cryptsetup.target
++After=dracut-cmdline.service basic.target dracut-initqueue.service cryptsetup.target
++Wants=dracut-cmdline.service
+ ConditionPathExists=/usr/lib/initrd-release
+ ConditionDirectoryNotEmpty=|/var/lib/dracut/hooks/pre-mount
+ ConditionDirectoryNotEmpty=|/etc/dracut/hooks/pre-mount
+--- a/modules.d/77initqueue/module-setup.sh
++++ b/modules.d/77initqueue/module-setup.sh
+@@ -17,7 +17,7 @@ install() {
+         inst_simple "$systemdsystemunitdir"/initrd.target.wants/dracut-initqueue.service
+ 
+         # Enable systemd type unit(s)
+-        $SYSTEMCTL -q --root "$initdir" enable dracut-initqueue.service
++        $SYSTEMCTL -q --root "$initdir" add-wants initrd.target dracut-initqueue.service
+     fi
+ 
+     dracut_need_initqueue
+--- a/modules.d/80base/module-setup.sh
++++ b/modules.d/80base/module-setup.sh
+@@ -55,7 +55,7 @@ install() {
+         reboot \
+         sysctl
+ 
+-    inst_binary "${dracutbasedir}/dracut-util" "/usr/bin/dracut-util"
++    inst_script "/usr/lib/dracut/dracut-util" "/usr/bin/dracut-util"
+ 
+     ln -s dracut-util "${initdir}/usr/bin/dracut-getarg"
+     ln -s dracut-util "${initdir}/usr/bin/dracut-getargs"
