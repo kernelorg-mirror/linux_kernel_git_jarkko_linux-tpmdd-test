@@ -9,8 +9,6 @@ SHELL := bash
 .ONESHELL:
 .SHELLFLAGS := -euo pipefail -c
 
-REQUIRED_HOST_TOOLS		:= curl flock sha256sum virt-install virsh wget xz
-
 # Versions
 TPMDD_VERSION			?= 2026.08
 SOURCE_DATE_EPOCH		?= 1735689600
@@ -98,7 +96,7 @@ $(1).$(3):
 	touch "$$@"
 endef
 
-.PHONY: default help list download dependencies sdk clean-sdk configure build install-virtd burn ssh clean lint
+.PHONY: default help list download sdk clean-sdk configure build install-virtd burn ssh clean lint
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -120,9 +118,6 @@ download: $(BUILDROOT_TARBALL) ## Prime the download cache
 
 $(SDK_UNPACK_STAMP): $(BUILDROOT_TARBALL)
 	@mkdir -p "$(dir $@)"
-	exec 9>"$(dir $@)/unpack.lock"
-	flock 9
-	if [ -f "$@" ]; then exit 0; fi
 	echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
 	rm -rf "$(SDK_SRC_DIR)"
 	mkdir -p "$(SDK_SRC_DIR)"
@@ -172,17 +167,7 @@ $(SDK_CACHE_DIR)/.stamp/$(1)/install: $(CURDIR)/sdk/$(1)_defconfig
 endef
 $(foreach arch,$(SDK_ARCHS),$(eval $(call sdk_rules,$(arch))))
 
-sdk: dependencies $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
-
-dependencies: ## Check required host tools
-	@missing=()
-	for tool in $(REQUIRED_HOST_TOOLS); do
-		command -v "$$tool" >/dev/null 2>&1 || missing+=("$$tool")
-	done
-	if [ "$${#missing[@]}" -ne 0 ]; then
-		echo "error: missing required host tools: $${missing[*]}" >&2
-		exit 1
-	fi
+sdk: $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
 
 $(PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH)
 	@echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
@@ -194,7 +179,7 @@ $(PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH)
 	mkdir -p "$(dir $@)"
 	touch "$@"
 
-configure: dependencies $(SDK_INSTALL_STAMP) $(PATCH_STAMP) ## Run <BOARD>_defconfig
+configure: $(SDK_INSTALL_STAMP) $(PATCH_STAMP) ## Run <BOARD>_defconfig
 	$(call buildroot,$(BOARD)_defconfig)
 
 build: configure ## Build <BOARD>
