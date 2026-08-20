@@ -5,8 +5,7 @@
 ################################################################################
 
 COMPOSEFS_VERSION = 1.0.8
-COMPOSEFS_SITE = https://github.com/composefs/composefs/archive/refs/tags
-COMPOSEFS_SOURCE = v$(COMPOSEFS_VERSION).tar.gz
+COMPOSEFS_SITE = $(call github,composefs,composefs,v$(COMPOSEFS_VERSION))
 COMPOSEFS_LICENSE = (GPL-2.0-only OR Apache-2.0) AND LGPL-2.1+
 COMPOSEFS_LICENSE_FILES = \
 	COPYING \
