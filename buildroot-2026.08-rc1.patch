@@ -3,9 +3,9 @@ index 2620c79..390e3e5 100644
 --- a/boot/edk2/Config.in
 +++ b/boot/edk2/Config.in
 @@ -107,6 +107,14 @@ comment "QEMU SBSA depends on ATF not using EDK2 as BL33"
- 
+
  endchoice
- 
+
 +config BR2_TARGET_EDK2_RPI
 +	bool "Raspberry Pi 3 and 4 firmware"
 +	depends on BR2_aarch64
@@ -22,9 +22,9 @@ index 11d9b90..347c88f 100644
 --- a/boot/edk2/edk2.mk
 +++ b/boot/edk2/edk2.mk
 @@ -124,6 +124,11 @@ EDK2_BUILD_DIR = $(EDK2_PLATFORM_NAME)
- 
+
  endif
- 
+
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +EDK2_DEPENDENCIES += edk2-non-osi
 +EDK2_PACKAGES_PATHS += $(STAGING_DIR)/usr/share/edk2-non-osi
@@ -39,12 +39,12 @@ index 11d9b90..347c88f 100644
  	NASM_PREFIX=$(HOST_DIR)/bin/ \
 +	GCC5_BIN=$(TARGET_CROSS) \
  	GCC5_$(EDK2_ARCH)_PREFIX=$(TARGET_CROSS)
- 
+
  EDK2_BUILD_OPTS += \
 @@ -161,8 +167,40 @@ define EDK2_BUILD_CMDS
  	build $(EDK2_BUILD_OPTS) all
  endef
- 
+
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +EDK2_RPI_BUILD_OPTS = \
 +	-t GCC5 \
@@ -68,7 +68,7 @@ index 11d9b90..347c88f 100644
  define EDK2_INSTALL_IMAGES_CMDS
  	cp -f $(@D)/Build/$(EDK2_BUILD_DIR)/$(EDK2_BUILD_TYPE)_GCC5/FV/*.fd $(BINARIES_DIR)
  endef
- 
+
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +define EDK2_INSTALL_RPI_IMAGES
 +	$(INSTALL) -D -m 0644 \
@@ -86,20 +86,22 @@ diff --git a/package/dracut/dracut.mk b/package/dracut/dracut.mk
 index 0bf7553..440bd46 100644
 --- a/package/dracut/dracut.mk
 +++ b/package/dracut/dracut.mk
-@@ -11,6 +11,9 @@ DRACUT_LICENSE_FILES = COPYING
+@@ -10,7 +10,10 @@ DRACUT_LICENSE = GPL-2.0
+ DRACUT_LICENSE_FILES = COPYING
  DRACUT_CPE_ID_VALID = YES
- 
- HOST_DRACUT_DEPENDENCIES = host-pkgconf host-kmod host-cross-ldd
+
+-HOST_DRACUT_DEPENDENCIES = host-pkgconf host-kmod host-cross-ldd
++HOST_DRACUT_DEPENDENCIES = host-pkgconf host-kmod host-cross-ldd host-rustc
 +HOST_DRACUT_MAKE_ENV = \
 +	CARGO_HOME=$(BR_CARGO_HOME) \
 +	LDFLAGS="$(HOST_LDFLAGS)"
  HOST_DRACUT_INSTALL_OPTS = systemdsystemunitdir="" install
- 
+
  define HOST_DRACUT_POST_INSTALL_WRAPPER_SCRIPT
 @@ -33,6 +36,15 @@ define HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
  endef
  HOST_DRACUT_POST_INSTALL_HOOKS += HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
- 
+
 +ifeq ($(BR2_INIT_SYSTEMD),y)
 +define HOST_DRACUT_POST_INSTALL_SYSTEMD_MODULES
 +	mkdir -p $(HOST_DIR)/lib/dracut/modules.d
@@ -112,6 +114,31 @@ index 0bf7553..440bd46 100644
  ifeq ($(BR2_INIT_BUSYBOX),y)
  # Dracut does not support busybox init (systemd init is assumed to work
  # out of the box, though). It provides a busybox module, that does not
+diff --git a/package/dracut/dracut_wrapper.in b/package/dracut/dracut_wrapper.in
+index 3301285..6eb68ac 100644
+--- a/package/dracut/dracut_wrapper.in
++++ b/package/dracut/dracut_wrapper.in
+@@ -41,6 +41,20 @@ export DRACUT_LDD
+ export DRACUT_INSTALL="${topdir}/lib/dracut/dracut-install"
+ export DRACUT_LDCONFIG=/bin/true
+ export dracutbasedir="${topdir}/lib/dracut"
++
++sysroot_modules_d="${sysroot%/}/usr/lib/dracut/modules.d"
++staged_modules=()
++if [ -d "${sysroot_modules_d}" ]; then
++	for moddir in "${sysroot_modules_d}"/[0-9][0-9]*; do
++		[ -d "${moddir}" ] || continue
++		name="$(basename "${moddir}")"
++		if [ ! -e "${dracutbasedir}/modules.d/${name}" ]; then
++			ln -s "${moddir}" "${dracutbasedir}/modules.d/${name}"
++			staged_modules+=("${dracutbasedir}/modules.d/${name}")
++		fi
++	done
++	trap 'for m in "${staged_modules[@]}"; do rm -f "$m"; done' EXIT
++fi
+ (exec "${topdir}/bin/dracut.real" "${@}")
+
+ if [ -n "${DRACUT_LDD}" ]; then
 diff --git a/package/edk2-non-osi/edk2-non-osi.mk b/package/edk2-non-osi/edk2-non-osi.mk
 index 57c8fca..6069e80 100644
 --- a/package/edk2-non-osi/edk2-non-osi.mk
@@ -119,7 +146,7 @@ index 57c8fca..6069e80 100644
 @@ -15,6 +15,14 @@ EDK2_NON_OSI_LICENSE += BSD-2-Clause-Patent (Marvell Armada)
  EDK2_NON_OSI_LICENSE_FILES += Silicon/Marvell/Armada7k8k/DeviceTree/Armada80x0McBin.inf
  EDK2_NON_OSI_DIRS += Silicon/Marvell/Armada7k8k/DeviceTree
- 
+
 +EDK2_NON_OSI_LICENSE += , BSD-3-Clause (Raspberry Pi TF-A)
 +EDK2_NON_OSI_LICENSE_FILES += \
 +	Platform/RaspberryPi/RPi3/TrustedFirmware/License.txt \
@@ -165,9 +192,9 @@ index 49eed65..d0bec81 100644
  	help
  	  OSTree is an upgrade system for Linux-based operating
  	  systems.
- 
+
  	  https://ostree.readthedocs.io/en/latest/
- 
+
 -comment "libostree needs a uClibc or glibc toolchain w/ threads, dynamic library, wchar, headers >= 5.8"
 -	depends on !BR2_TOOLCHAIN_HAS_THREADS || BR2_STATIC_LIBS \
 -		|| !BR2_USE_WCHAR || BR2_TOOLCHAIN_USES_MUSL || \
@@ -197,12 +224,12 @@ index a737dc0..6ff53cf 100644
 @@ -4,24 +4,51 @@
  #
  ################################################################################
- 
+
 -LIBOSTREE_VERSION = 2023.8
 +LIBOSTREE_VERSION = 2026.1
  LIBOSTREE_SOURCE = libostree-$(LIBOSTREE_VERSION).tar.xz
  LIBOSTREE_SITE = https://github.com/ostreedev/ostree/releases/download/v$(LIBOSTREE_VERSION)
- 
+
  LIBOSTREE_LICENSE = LGPL-2.0+
  LIBOSTREE_LICENSE_FILES = COPYING
 -LIBOSTREE_DEPENDENCIES = e2fsprogs host-bison host-pkgconf libglib2 libgpg-error libgpgme xz
@@ -222,7 +249,7 @@ index a737dc0..6ff53cf 100644
 +	xz \
 +	zlib
  LIBOSTREE_INSTALL_STAGING = YES
- 
+
  LIBOSTREE_CONF_ENV = \
  	GPG_ERROR_CONFIG=$(STAGING_DIR)/usr/bin/gpg-error-config
  LIBOSTREE_CONF_OPTS += \
@@ -247,13 +274,13 @@ index a737dc0..6ff53cf 100644
 -	--disable-man
 +	--disable-man \
 +	--disable-otmpfile
- 
+
  ifeq ($(BR2_PACKAGE_GOBJECT_INTROSPECTION),y)
  LIBOSTREE_DEPENDENCIES += gobject-introspection
 @@ -31,48 +58,6 @@ else
  LIBOSTREE_CONF_OPTS += --disable-introspection
  endif
- 
+
 -ifeq ($(BR2_PACKAGE_OPENSSL),y)
 -LIBOSTREE_CONF_OPTS += --with-openssl
 -LIBOSTREE_DEPENDENCIES += openssl
@@ -302,7 +329,7 @@ index a737dc0..6ff53cf 100644
 @@ -80,13 +65,11 @@ else
  LIBOSTREE_CONF_OPTS += --without-selinux
  endif
- 
+
 -ifeq ($(BR2_INIT_SYSTEMD),y)
 -LIBOSTREE_CONF_OPTS += \
 -	--with-libsystemd \
@@ -317,7 +344,7 @@ index a737dc0..6ff53cf 100644
 +		$(TARGET_DIR)/usr/lib/dracut/modules.d/50ostree/module-setup.sh
 +endef
 +LIBOSTREE_POST_INSTALL_TARGET_HOOKS += LIBOSTREE_INSTALL_DRACUT_MODULE
- 
+
  $(eval $(autotools-package))
 diff --git a/package/linux-tools/linux-tool-selftests.mk.in b/package/linux-tools/linux-tool-selftests.mk.in
 index db7e4fa..75442f3 100644
@@ -330,7 +357,7 @@ index db7e4fa..75442f3 100644
 -	KHDR_DIR=$(LINUX_DIR)/usr/include
 +	KHDR_DIR=$(LINUX_DIR)/usr/include \
 +	TARGETS=tpm2
- 
+
  LINUX_TOOLS_BIN_ARCH_EXCLUDE += \
  	/usr/lib/kselftests/tc-testing/
 diff --git a/package/pkg-cargo.mk b/package/pkg-cargo.mk
@@ -340,7 +367,7 @@ index 47a6353..a9824ba 100644
 @@ -212,13 +212,8 @@ ifneq ($$($(2)_LICENSE),)
  $(2)_LICENSE += , vendored dependencies licenses probably not listed
  endif
- 
+
 -# Note: in all the steps below, we "cd" into the build directory to
 -# execute the "cargo" tool instead of passing $(@D)/Cargo.toml as the
 -# manifest-path. Indeed while the latter seems to work, it in fact
@@ -413,7 +440,7 @@ index 47a6353..a9824ba 100644
  			--force \
  			--locked \
 @@ -289,16 +290,18 @@ endif
- 
+
  ifndef $(2)_INSTALL_CMDS
  define $(2)_INSTALL_CMDS
 -	cd $$($$(PKG)_SRCDIR) && \
@@ -440,7 +467,7 @@ index a068893..1e7373c 100644
 @@ -12,6 +12,10 @@ STRACE_LICENSE_FILES = COPYING LGPL-2.1-or-later
  STRACE_CPE_ID_VALID = YES
  STRACE_CONF_OPTS = --enable-mpers=no
- 
+
 +# strace 7.0 does not yet handle the newer io_uring_buf_reg layout
 +# from the toolchain headers, so force its bundled linux UAPI headers.
 +STRACE_CONF_OPTS += --enable-bundled=yes
@@ -453,14 +480,14 @@ index b0e59ad..b2af511 100755
 --- a/support/download/cargo-post-process
 +++ b/support/download/cargo-post-process
 @@ -28,16 +28,18 @@ fi
- 
+
  post_process_unpack "${base_name}" "${output}"
- 
+
 -# Do the Cargo vendoring
 +# Vendor with cargo run from / (avoid hierarchical ~/.cargo configs).
  pushd "${base_name}" > /dev/null
 +pkg_dir=$(pwd)
- 
+
  # Create the local .cargo/config.toml with vendor info
  mkdir -p .cargo/
  mkdir -p "${CARGO_HOME}"
@@ -473,5 +500,40 @@ index b0e59ad..b2af511 100755
 +    --locked "${pkg_dir}/VENDOR" \
 +    | sed 's|^directory = ".*"|directory = "VENDOR"|' \
      > .cargo/config.toml
- 
+
  # "cargo vendor' outputs on stderr a message directing to add some data
+diff --git a/support/download/helpers b/support/download/helpers
+index f4102e3..dd61bc3 100755
+--- a/support/download/helpers
++++ b/support/download/helpers
+@@ -64,8 +64,12 @@ mk_tar_gz() {
+              --format=posix --pax-option="${pax_options}" --mode='go=u,go-w' \
+              -T "${tmp}.sorted" >"${tmp}.tar"
+
+-    # Compress the archive
+-    gzip -6 -n <"${tmp}.tar" >"${out}"
++    # Compress the archive in the same format as the original tarball
++    # (see post_process_unpack), so the archive matches its file name.
++    case "${post_process_compression:-gz}" in
++    xz) xz -6 -T1 <"${tmp}.tar" >"${out}";;
++    *)  gzip -6 -n <"${tmp}.tar" >"${out}";;
++    esac
+
+     rm -f "${tmp}"{.list,.sorted,.tar}
+
+@@ -77,8 +81,14 @@ post_process_unpack() {
+     local tarball="${2}"
+     local one_file
+
++    if xz -t "${tarball}" 2>/dev/null; then
++        post_process_compression=xz
++    else
++        post_process_compression=gz
++    fi
++
+     mkdir "${dest}"
+-    ${TAR} -C "${dest}" --strip-components=1 -xzf "${tarball}"
++    ${TAR} -C "${dest}" --strip-components=1 -xf "${tarball}"
+     one_file="$(find "${dest}" -type f -print0 |LC_ALL=C sort -z |sed 's/\x0.*//')"
+     touch -r "${one_file}" "${dest}.timestamp"
+ }
