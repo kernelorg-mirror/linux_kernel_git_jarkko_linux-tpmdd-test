@@ -33,7 +33,7 @@ done
   --init \
   --cpus "${CONTAINER_CPUS}" \
   --memory "${CONTAINER_MEMORY}" \
-  --env BUILD_DIR=/build \
+  --env OUTPUT_DIR=/build \
   --volume "${PWD}:/workspace" \
   --volume tpmdd-build:/build \
   --volume tpmdd-cache:/cache \

@@ -7,14 +7,14 @@ set -euo pipefail
 
 readonly workspace=/workspace
 readonly artifacts_dir=${workspace}/build
-readonly build_dir=${BUILD_DIR:-${artifacts_dir}}
+readonly output_dir=${OUTPUT_DIR:-${artifacts_dir}}
 
 if ((EUID == 0)); then
   workspace_uid=$(stat -c %u "${workspace}")
   workspace_gid=$(stat -c %g "${workspace}")
 
   install -d -m 0755 -o "${workspace_uid}" -g "${workspace_gid}" \
-    "${HOME}" "${artifacts_dir}" "${build_dir}"
+    "${HOME}" "${artifacts_dir}" "${output_dir}"
 
   if ((workspace_uid != 0)); then
     if ! getent group "${workspace_gid}" >/dev/null; then
@@ -50,13 +50,13 @@ for defconfig in "${defconfigs[@]}"; do
     echo "error: invalid board name: ${board}" >&2
     exit 1
   fi
-  make build BOARD="${board}" BUILD_DIR="${build_dir}"
+  make build BOARD="${board}" OUTPUT_DIR="${output_dir}"
 
-  if [[ "${build_dir}" != "${artifacts_dir}" ]]; then
+  if [[ "${output_dir}" != "${artifacts_dir}" ]]; then
     install -d "${artifacts_dir}/${board}"
     rsync --archive \
-      "${build_dir}/${board}/.config" \
-      "${build_dir}/${board}/images" \
+      "${output_dir}/${board}/.config" \
+      "${output_dir}/${board}/images" \
       "${artifacts_dir}/${board}/"
   fi
 done

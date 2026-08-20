@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
+#
+# Toolchain-only SDK for x86_64. Built from the pristine Buildroot
+# tarball (no tpmdd patch) and cached as an external toolchain.
+
+BR2_x86_64=y
+BR2_TOOLCHAIN_BUILDROOT_VENDOR="tpmdd"
+BR2_KERNEL_HEADERS_7_1=y
+BR2_BINUTILS_VERSION_2_46_X=y
+BR2_GCC_VERSION_15_X=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+BR2_GCC_ENABLE_OPENMP=y
+BR2_GCC_ENABLE_GRAPHITE=y
+BR2_JLEVEL=8
+BR2_CCACHE=y
+BR2_CCACHE_INITIAL_SETUP="--max-size 20G"
+BR2_OPTIMIZE_3=y
+BR2_REPRODUCIBLE=y
+BR2_INIT_NONE=y
+BR2_SYSTEM_BIN_SH_NONE=y
+# BR2_PACKAGE_BUSYBOX is not set
+# BR2_TARGET_ROOTFS_TAR is not set

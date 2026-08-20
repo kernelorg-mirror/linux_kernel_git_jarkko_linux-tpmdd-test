@@ -1,43 +1,80 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
 
+# Make is the single build language: this orchestrator and Buildroot. Run
+# `make` for targets, or `make list` for available defconfigs.
+
 # Build system
 SHELL := bash
 .ONESHELL:
 .SHELLFLAGS := -euo pipefail -c
 
-# Versions
-TPMDD_VERSION     ?= 2026.08
-BUILDROOT_VERSION ?= 2026.08-rc1
-SOURCE_DATE_EPOCH ?= 1735689600
+REQUIRED_HOST_TOOLS		:= curl flock sha256sum wget xz
 
-# URLs and hashes
-BUILDROOT_HASH ?= fbb78d7e07ca91cc4def0a0730a332e5bcf2234b59f3b0c151104e2dc79ff6fe
-BUILDROOT_URL  ?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
+# Versions
+TPMDD_VERSION			?= 2026.08
+SOURCE_DATE_EPOCH		?= 1735689600
 
 # Directories
-BUILD_DIR    ?= build
-BOARD_DIR    := $(abspath $(BUILD_DIR)/$(BOARD))
-STAMP_DIR    := $(BOARD_DIR)/stamp
-CACHE_DIR    := $(HOME)/.cache/tpmdd
-DOWNLOAD_DIR := $(CACHE_DIR)/download
-CCACHE_DIR   := $(CACHE_DIR)/ccache
+OUTPUT_DIR			?= build
+OUTPUT_DIR_ABS			:= $(abspath $(OUTPUT_DIR))
+BOARD_DIR			:= $(OUTPUT_DIR_ABS)/$(BOARD)
+CACHE_DIR			:= $(HOME)/.cache/tpmdd
+DOWNLOAD_DIR			:= $(CACHE_DIR)/download
+CCACHE_DIR			:= $(CACHE_DIR)/ccache
+STAMP_DIR			:= $(BOARD_DIR)/stamp
+
+# Buildroot
+BUILDROOT_VERSION		?= 2026.08-rc1
+BUILDROOT_HASH			?= fbb78d7e07ca91cc4def0a0730a332e5bcf2234b59f3b0c151104e2dc79ff6fe
+BUILDROOT_URL			?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
+BUILDROOT_DL_DIR		:= $(DOWNLOAD_DIR)/buildroot
+BUILDROOT_TARBALL		:= $(BUILDROOT_DL_DIR)/buildroot-$(BUILDROOT_VERSION).tar.xz
+BUILDROOT_PATCH			:= $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
+BUILDROOT_SRC_DIR		:= $(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
+
+# SDK
+# Relocated toolchains stay in the cache. Unpack and O= trees are
+# scratch under OUTPUT_DIR so `make clean` removes them.
+SDK_DIR				:= $(CACHE_DIR)/sdk
+SDK_CACHE_DIR			:= $(SDK_DIR)/$(BUILDROOT_VERSION)
+SDK_ROOT			= $(SDK_CACHE_DIR)/$(1)/$(1)-tpmdd-linux-gnu_sdk-buildroot
+SDK_BUILD_DIR			:= $(OUTPUT_DIR_ABS)/sdk/$(BUILDROOT_VERSION)
+SDK_SRC_DIR			:= $(SDK_BUILD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
+SDK_ARCHS			:= $(patsubst sdk/%_defconfig,%,$(wildcard sdk/*_defconfig))
+ifdef BOARD
+ifeq ($(wildcard configs/$(BOARD)_defconfig),)
+$(error unknown BOARD=$(BOARD); see `make list`)
+endif
+BOARD_KCONFIG			:= $(file < configs/$(BOARD)_defconfig)
+ifneq ($(filter BR2_x86_64=y,$(BOARD_KCONFIG)),)
+SDK_ARCH := x86_64
+else ifneq ($(filter BR2_aarch64=y,$(BOARD_KCONFIG)),)
+SDK_ARCH := aarch64
+else
+$(error configs/$(BOARD)_defconfig must select BR2_x86_64 or BR2_aarch64)
+endif
+else
+SDK_ARCH :=
+endif
+
+SDK_INSTALL_DIR			:= $(call SDK_ROOT,$(SDK_ARCH))
+IMAGE_EXT			:= $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
 
 # Stamps
-VERIFY_STAMP := $(STAMP_DIR)/$(BUILDROOT_VERSION)/verify
-PATCH_STAMP  := $(STAMP_DIR)/$(BUILDROOT_VERSION)/patch
+PATCH_STAMP			:= $(STAMP_DIR)/$(BUILDROOT_VERSION)/patch
+SDK_UNPACK_STAMP		:= $(SDK_BUILD_DIR)/.stamp/unpack
+SDK_INSTALL_STAMP		:= $(SDK_CACHE_DIR)/.stamp/$(SDK_ARCH)/install
 
-# Artifacts
-BUILDROOT_TARBALL := $(DOWNLOAD_DIR)/buildroot-$(BUILDROOT_VERSION).tar.xz
-BUILDROOT_PATCH   := $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
-IMAGE_EXT         := $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
-
-# Buildroot invocation helper
+# Buildroot invocation helper.
+# BR2_REPRODUCIBLE lives in the defconfigs; it is a Kconfig bool, not
+# option env=, so a make-line override would not reach .config.
 define buildroot
-  $(MAKE) -C "$(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)" O="$(BOARD_DIR)" \
-    BR2_REPRODUCIBLE=y BR2_EXTERNAL="$(CURDIR)" \
-    BR2_CCACHE_DIR="$(CCACHE_DIR)" BR2_DL_DIR="$(DOWNLOAD_DIR)" \
-    SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" TPMDD_VERSION="$(TPMDD_VERSION)" \
+  $(MAKE) -C "$(BUILDROOT_SRC_DIR)" O="$(BOARD_DIR)" \
+    BR2_EXTERNAL="$(CURDIR)" \
+    BR2_CCACHE_DIR="$(CCACHE_DIR)" BR2_DL_DIR="$(BUILDROOT_DL_DIR)" \
+    SDK_INSTALL_DIR="$(SDK_INSTALL_DIR)" \
+    TPMDD_VERSION="$(TPMDD_VERSION)" SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
     $(1)
 endef
 
@@ -49,35 +86,114 @@ define require_artifact
   fi
 endef
 
-ifneq ($(filter-out default help list clean download,$(MAKECMDGOALS)),)
-  ifndef BOARD
-    $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
-  endif
-endif
-.PHONY: default help list download dependencies configure build burn qemu ssh clean
+define download
+$(1): $(1).$(3)
+	@mkdir -p "$(dir $(1))"
+	if [ ! -f "$(1)" ] || ! echo "$(3)  $(1)" | sha256sum --status -c -; then
+		curl -fL --retry 3 --connect-timeout 10 --progress-bar -o "$(1).partial" "$(2)"
+		echo "$(3)  $(1).partial" | sha256sum --status -c -
+		mv "$(1).partial" "$(1)"
+	fi
+	touch "$(1)"
 
-default: help
+$(1).$(3):
+	@mkdir -p "$(dir $(1))"
+	touch "$$@"
+endef
+
+.PHONY: default help list download dependencies sdk prune-sdk-scratch clean-sdk configure build qemu burn ssh clean
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+default: help
+
+$(eval $(call download,$(BUILDROOT_TARBALL),$(BUILDROOT_URL),$(BUILDROOT_HASH)))
+
+ifneq ($(filter configure build qemu burn ssh,$(MAKECMDGOALS)),)
+  ifndef BOARD
+    $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
+  endif
+endif
+
 list: ## List available defconfigs
 	@cd configs && ls *_defconfig | sed 's/_defconfig//'
 
-$(BUILDROOT_TARBALL):
-	@mkdir -p "$(DOWNLOAD_DIR)"
-	wget -q --show-progress -O "$@.partial" "$(BUILDROOT_URL)"
-	mv "$@.partial" "$@"
+download: $(BUILDROOT_TARBALL) ## Prime the download cache
 
-download: $(BUILDROOT_TARBALL) ## Prime the Buildroot download cache
-
-$(VERIFY_STAMP): $(BUILDROOT_TARBALL)
-	@echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
-	mkdir -p "$(dir $@)"
+$(SDK_UNPACK_STAMP): $(BUILDROOT_TARBALL)
+	@mkdir -p "$(dir $@)"
+	exec 9>"$(dir $@)/unpack.lock"
+	flock 9
+	if [ -f "$@" ]; then exit 0; fi
+	echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
+	rm -rf "$(SDK_SRC_DIR)"
+	mkdir -p "$(SDK_SRC_DIR)"
+	tar -xf "$(BUILDROOT_TARBALL)" --strip-components=1 -C "$(SDK_SRC_DIR)"
 	touch "$@"
 
-$(PATCH_STAMP): $(VERIFY_STAMP) $(BUILDROOT_PATCH)
-	@src_dir="$(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)"
+define sdk_buildroot
+  $(MAKE) -C "$(SDK_SRC_DIR)" O="$(SDK_BUILD_DIR)/build/$(1)" \
+    BR2_DL_DIR="$(BUILDROOT_DL_DIR)" BR2_CCACHE_DIR="$(CCACHE_DIR)" \
+    SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
+    $(2)
+endef
+
+define sdk_rules
+.PHONY: sdk-$(1)
+
+sdk-$(1): $(SDK_CACHE_DIR)/.stamp/$(1)/install
+
+$(SDK_BUILD_DIR)/.stamp/$(1)/build: $(SDK_UNPACK_STAMP) $(CURDIR)/sdk/$(1)_defconfig
+	mkdir -p "$(SDK_BUILD_DIR)/build/$(1)" "$(SDK_BUILD_DIR)/.stamp/$(1)"
+	$(call sdk_buildroot,$(1),defconfig DEFCONFIG="$(CURDIR)/sdk/$(1)_defconfig")
+	$(call sdk_buildroot,$(1),sdk)
+	touch "$(SDK_BUILD_DIR)/.stamp/$(1)/build"
+
+# Install stamp lives in the cache and depends only on the defconfig, so a
+# populated toolchain is a hit after wiping OUTPUT_DIR.
+$(SDK_CACHE_DIR)/.stamp/$(1)/install: $(CURDIR)/sdk/$(1)_defconfig
+	sdk_root="$(call SDK_ROOT,$(1))"
+	if [ -x "$$$$sdk_root/relocate-sdk.sh" ] && [ ! "$(CURDIR)/sdk/$(1)_defconfig" -nt "$$$$sdk_root/relocate-sdk.sh" ]; then
+		mkdir -p "$(SDK_CACHE_DIR)/.stamp/$(1)"
+		touch "$(SDK_CACHE_DIR)/.stamp/$(1)/install"
+		exit 0
+	fi
+	$(MAKE) "$(SDK_BUILD_DIR)/.stamp/$(1)/build"
+	tarball="$$$$(echo "$(SDK_BUILD_DIR)/build/$(1)/images/"*_sdk-buildroot.tar.gz)"
+	if [ ! -f "$$$$tarball" ]; then
+		echo "error: no SDK tarball in $(SDK_BUILD_DIR)/build/$(1)/images" >&2
+		exit 1
+	fi
+	topdir="$$$${tarball##*/}"; topdir="$$$${topdir%.tar.gz}"
+	rm -rf "$(SDK_CACHE_DIR)/$(1)"
+	mkdir -p "$(SDK_CACHE_DIR)/$(1)"
+	tar -xzf "$$$$tarball" -C "$(SDK_CACHE_DIR)/$(1)"
+	test -x "$(SDK_CACHE_DIR)/$(1)/$$$$topdir/relocate-sdk.sh"
+	"$(SDK_CACHE_DIR)/$(1)/$$$$topdir/relocate-sdk.sh"
+	mkdir -p "$(SDK_CACHE_DIR)/.stamp/$(1)"
+	touch "$(SDK_CACHE_DIR)/.stamp/$(1)/install"
+endef
+$(foreach arch,$(SDK_ARCHS),$(eval $(call sdk_rules,$(arch))))
+
+prune-sdk-scratch:
+	rm -rf "$(SDK_CACHE_DIR)/src" "$(SDK_CACHE_DIR)/build"
+
+sdk: dependencies prune-sdk-scratch $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
+
+dependencies: ## Check required host tools
+	@missing=()
+	for tool in $(REQUIRED_HOST_TOOLS); do
+		command -v "$$tool" >/dev/null 2>&1 || missing+=("$$tool")
+	done
+	if [ "$${#missing[@]}" -ne 0 ]; then
+		echo "error: missing required host tools: $${missing[*]}" >&2
+		exit 1
+	fi
+
+$(PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH)
+	@echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
+	src_dir="$(BUILDROOT_SRC_DIR)"
 	rm -rf "$$src_dir"
 	mkdir -p "$$src_dir"
 	tar -xf "$(BUILDROOT_TARBALL)" --strip-components=1 -C "$$src_dir"
@@ -85,19 +201,19 @@ $(PATCH_STAMP): $(VERIFY_STAMP) $(BUILDROOT_PATCH)
 	mkdir -p "$(dir $@)"
 	touch "$@"
 
-dependencies:
-	@if [ ! -f "$(CURDIR)/configs/$(BOARD)_defconfig" ]; then
-		echo "error: missing configs/$(BOARD)_defconfig" >&2
-		exit 1
-	fi
-
-configure: dependencies ## Run <BOARD>_defconfig with the Bootlin toolchain
-	$(MAKE) "$(PATCH_STAMP)" BOARD="$(BOARD)"
-	@mkdir -p "$(BOARD_DIR)"
+configure: dependencies $(SDK_INSTALL_STAMP) $(PATCH_STAMP) ## Run <BOARD>_defconfig
 	$(call buildroot,$(BOARD)_defconfig)
 
 build: configure ## Build <BOARD>
-	$(call buildroot,)
+	$(call buildroot,BR2_CCACHE=y)
+
+qemu: ## Boot <BOARD> in QEMU
+	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT))
+	exec "$(BOARD_DIR)/images/qemu-exec.sh"
+
+ssh: ## Open an SSH session to <BOARD>
+	$(call require_artifact,$(BOARD_DIR)/images/ssh_config)
+	exec ssh -F "$(BOARD_DIR)/images/ssh_config" tpmdd.local
 
 burn: build ## Write image to DEVICE
 	@if [ -z "$(DEVICE)" ]; then
@@ -115,13 +231,8 @@ burn: build ## Write image to DEVICE
 	fi
 	sudo dd if="$$image" of="$(DEVICE)" bs=1M status=progress oflag=sync
 
-qemu: ## Boot <BOARD> in QEMU
-	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT))
-	exec "$(BOARD_DIR)/images/qemu-exec.sh"
+clean: prune-sdk-scratch ## Remove build artifacts
+	rm -rf "$(OUTPUT_DIR_ABS)"
 
-ssh: ## Open an SSH session to <BOARD>
-	$(call require_artifact,$(BOARD_DIR)/images/ssh_config)
-	exec ssh -F "$(BOARD_DIR)/images/ssh_config" tpmdd.local
-
-clean: ## Remove build artifacts
-	rm -rf "$(CURDIR)/$(BUILD_DIR)"
+clean-sdk: ## Remove cached SDK toolchains
+	rm -rf "$(SDK_DIR)"
