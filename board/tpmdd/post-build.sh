@@ -105,49 +105,6 @@ cleanup_host_dracut_link() {
 }
 trap cleanup_host_dracut_link EXIT
 
-# Use the target shell implementation instead of installing host dracut-util.
-# shellcheck disable=SC2016
-sed -i \
-  's|inst_binary "${dracutbasedir}/dracut-util" "/usr/bin/dracut-util"|inst_script "/usr/lib/dracut/dracut-util" "/usr/bin/dracut-util"|' \
-  "${HOST_DIR}/lib/dracut/modules.d/80base/module-setup.sh"
-
-# Make systemd module probing inspect the initramfs being assembled.
-# shellcheck disable=SC2016
-sed -i \
-  's|\[\[ -f "$systemdsystemunitdir"/$i \]\]|[[ -f "$initdir/$systemdsystemunitdir"/$i ]]|g' \
-  "${HOST_DIR}/lib/dracut/modules.d/10systemd/module-setup.sh"
-
-pre_mount_service="${HOST_DIR}/lib/dracut/modules.d/77dracut-systemd/dracut-pre-mount.service"
-if ! grep -q '^After=.*dracut-cmdline.service' "${pre_mount_service}"; then
-  sed -i 's|^After=|After=dracut-cmdline.service |' "${pre_mount_service}"
-fi
-if ! grep -q '^Wants=dracut-cmdline.service$' "${pre_mount_service}"; then
-  sed -i \
-    's|^\(ConditionPathExists=/usr/lib/initrd-release\)$|Wants=dracut-cmdline.service\n\1|' \
-    "${pre_mount_service}"
-fi
-
-# shellcheck disable=SC2016
-sed -i \
-  's|$SYSTEMCTL -q --root "$initdir" enable dracut-initqueue.service|$SYSTEMCTL -q --root "$initdir" add-wants initrd.target dracut-initqueue.service|' \
-  "${HOST_DIR}/lib/dracut/modules.d/77initqueue/module-setup.sh"
-
-# OverlayFS is built into the live kernels, but dracut has no drivers_dir when
-# assembling against a sysroot.
-sed -i \
-  's#require_kernel_modules overlay || return 1#return 255#' \
-  "${HOST_DIR}/lib/dracut/modules.d/70overlayfs/module-setup.sh"
-
-# ostree dracut module checks absolute paths without $dracutsysrootdir.
-ostree_modsetup="${TARGET_DIR}/usr/lib/dracut/modules.d/50ostree/module-setup.sh"
-if [ -f "${ostree_modsetup}" ]; then
-  # shellcheck disable=SC2016
-  sed -i \
-    -e 's|\[\[ -x \$systemdutildir/systemd \]\]|[[ -x $dracutsysrootdir$systemdutildir/systemd ]]|g' \
-    -e 's|\[\[ -x /usr/lib/ostree/ostree-prepare-root \]\]|[[ -x $dracutsysrootdir/usr/lib/ostree/ostree-prepare-root ]]|g' \
-    "${ostree_modsetup}"
-fi
-
 "${HOST_DIR}/bin/dracut" --sysroot "${TARGET_DIR}" \
   --tmpdir "${BINARIES_DIR}" \
   --force "${TARGET_DIR}/usr/lib/modules/${kver}/initramfs.img" "${kver}"
@@ -162,6 +119,9 @@ ln -sfT var/opt "${TARGET_DIR}/opt"
 ln -sfT var/mnt "${TARGET_DIR}/mnt"
 ln -sfT var/home "${TARGET_DIR}/home"
 ln -sfT ../var/usrlocal "${TARGET_DIR}/usr/local"
+
+find "${TARGET_DIR}/etc/systemd/system" -type l -regextype posix-extended \
+  -regex '.*/Cu[[:alnum:]]{6}' -delete
 
 # SSH key for the live image (lives under /var after the bootc reshape).
 SSH_DIR="${TARGET_DIR}/var/roothome/.ssh"

@@ -8,7 +8,6 @@ set -euo pipefail
 : "${TARGET_DIR:?TARGET_DIR must be set by Buildroot}"
 : "${BINARIES_DIR:?BINARIES_DIR must be set by Buildroot}"
 : "${HOST_DIR:?HOST_DIR must be set by Buildroot}"
-: "${BUILD_DIR:?BUILD_DIR must be set by Buildroot}"
 TPMDD_ARCH=${2:?architecture argument required (amd64 or arm64)}
 TPMDD_VERSION=${TPMDD_VERSION:-0}
 
@@ -25,14 +24,18 @@ case "${TPMDD_ARCH}" in
     kernel="${BINARIES_DIR}/bzImage"
     efi_boot_name="BOOTX64.EFI"
     cmdline_extra=" console=ttyS0,115200n8"
-    oci_goarch="amd64"
+    bootc_host_arch="x86_64"
+    qemu_user="${HOST_DIR}/bin/qemu-x86_64"
+    bootc_ldso="${TARGET_DIR}/lib/ld-linux-x86-64.so.2"
     ;;
   arm64)
     stub="${TARGET_DIR}/usr/lib/systemd/boot/efi/linuxaa64.efi.stub"
     kernel="${BINARIES_DIR}/Image"
     efi_boot_name="BOOTAA64.EFI"
     cmdline_extra=" console=ttyAMA0,115200n8"
-    oci_goarch="arm64"
+    bootc_host_arch="aarch64"
+    qemu_user="${HOST_DIR}/bin/qemu-aarch64"
+    bootc_ldso="${TARGET_DIR}/lib/ld-linux-aarch64.so.1"
     ;;
   *)
     echo "unknown TPMDD_ARCH: ${TPMDD_ARCH}" >&2
@@ -50,124 +53,30 @@ test -f "${stub}"
 test -f "${kernel}"
 test -f "${initrd}"
 test -f "${rootfs_squashfs}"
+test -f "${oci_archive}"
 
-create_oci_archive() {
-  local arch="$1"
-  local -a layer_entries
-  local tmp_dir layer layer_sha layer_size config config_sha config_size
-  local devices_table users_table mkusers manifest manifest_sha manifest_size created
-
-  created=$(date -u -d "@${SOURCE_DATE_EPOCH:-0}" +%Y-%m-%dT%H:%M:%SZ)
-  tmp_dir=$(mktemp -d "${BINARIES_DIR}/oci.XXXXXX")
-
-  mkdir -p "${tmp_dir}/blobs/sha256"
-  layer="${tmp_dir}/layer.tar"
-  devices_table="${BUILD_DIR}/buildroot-fs/full_devices_table.txt"
-  users_table="${BUILD_DIR}/buildroot-fs/full_users_table.txt"
-  mkusers="${PWD}/support/scripts/mkusers"
-  test -r "${devices_table}"
-  test -r "${users_table}"
-  test -x "${mkusers}"
-
-  mapfile -d '' -t layer_entries < <(
-    find "${TARGET_DIR}" -mindepth 1 -maxdepth 1 -printf '%P\0' | sort -z
-  )
-
-  # shellcheck disable=SC2016
-  "${HOST_DIR}/bin/fakeroot" -- bash -c '
-    set -euo pipefail
-    target_dir="$1"
-    layer="$2"
-    users_table="$3"
-    devices_table="$4"
-    mkusers="$5"
-    makedevs="$6"
-    br2_config="$7"
-    src_date_epoch="$8"
-    shift 8
-    chown -hR 0:0 "$target_dir"
-    BR2_CONFIG="$br2_config" "$mkusers" "$users_table" "$target_dir"
-    "$makedevs" -d "$devices_table" "$target_dir"
-    tar \
-      --sort=name \
-      --mtime="@${src_date_epoch}" \
-      --clamp-mtime \
-      --numeric-owner \
-      --acls \
-      --xattrs \
-      -C "$target_dir" \
-      -cf "$layer" \
-      "$@"
-  ' _ "${TARGET_DIR}" "${layer}" "${users_table}" "${devices_table}" \
-    "${mkusers}" "${HOST_DIR}/bin/makedevs" "${BR2_CONFIG}" \
-    "${SOURCE_DATE_EPOCH:-0}" "${layer_entries[@]}"
-
-  layer_sha=$(sha256sum "${layer}" | cut -d ' ' -f1)
-  layer_size=$(stat -c %s "${layer}")
-  mv "${layer}" "${tmp_dir}/blobs/sha256/${layer_sha}"
-
-  config="${tmp_dir}/config.json"
-  cat > "${config}" <<CFG
-{"created":"${created}","architecture":"${arch}","os":"linux","config":{"Labels":{"containers.bootc":"1","ostree.bootable":"1","org.opencontainers.image.title":"tpmdd","org.opencontainers.image.version":"${TPMDD_VERSION}"}},"rootfs":{"type":"layers","diff_ids":["sha256:${layer_sha}"]},"history":[{"created":"${created}","created_by":"tpmdd post-image"}]}
-CFG
-  config_sha=$(sha256sum "${config}" | cut -d ' ' -f1)
-  config_size=$(stat -c %s "${config}")
-  mv "${config}" "${tmp_dir}/blobs/sha256/${config_sha}"
-
-  manifest="${tmp_dir}/manifest.json"
-  cat > "${manifest}" <<MAN
-{"schemaVersion":2,"config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:${config_sha}","size":${config_size}},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":"sha256:${layer_sha}","size":${layer_size}}]}
-MAN
-  manifest_sha=$(sha256sum "${manifest}" | cut -d ' ' -f1)
-  manifest_size=$(stat -c %s "${manifest}")
-  mv "${manifest}" "${tmp_dir}/blobs/sha256/${manifest_sha}"
-  oci_digest="sha256:${manifest_sha}"
-
-  cat > "${tmp_dir}/oci-layout" <<'LAY'
-{"imageLayoutVersion":"1.0.0"}
-LAY
-  cat > "${tmp_dir}/index.json" <<IDX
-{"schemaVersion":2,"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:${manifest_sha}","size":${manifest_size},"annotations":{"org.opencontainers.image.ref.name":"${image_ref}"}}]}
-IDX
-
-  rm -f "${oci_archive}"
-  tar \
-    --sort=name \
-    --mtime="@${SOURCE_DATE_EPOCH:-0}" \
-    --clamp-mtime \
-    --numeric-owner \
-    -C "${tmp_dir}" \
-    -cf "${oci_archive}" \
-    oci-layout index.json blobs
-  rm -rf "${tmp_dir}"
-}
-
-create_oci_archive "${oci_goarch}"
-
-# bootc container lint: same-arch chroot, else qemu-user if present.
-bootc_bin="${TARGET_DIR}/usr/bin/bootc"
-case "${TPMDD_ARCH}" in
-  amd64) bootc_host_arch=x86_64; qemu_user="${HOST_DIR}/bin/qemu-x86_64" ;;
-  arm64) bootc_host_arch=aarch64; qemu_user="${HOST_DIR}/bin/qemu-aarch64" ;;
-  *) bootc_host_arch=""; qemu_user="" ;;
+index_json=$(tar -xOf "${oci_archive}" index.json | tr -d '[:space:]')
+oci_digest=${index_json#*'"digest":"'}
+oci_digest=${oci_digest%%'"'*}
+case "${oci_digest}" in
+  sha256:[0-9a-f]*) ;;
+  *)
+    echo "invalid oci digest in ${oci_archive}" >&2
+    exit 1
+    ;;
 esac
+
+# bootc container lint validates the target rootfs using target's bootc binary.
+bootc_bin="${TARGET_DIR}/usr/bin/bootc"
+bootc_libpath="${TARGET_DIR}/lib:${TARGET_DIR}/usr/lib"
 if [ ! -x "${bootc_bin}" ]; then
   echo "warning: skipping bootc container lint: ${bootc_bin} missing" >&2
-elif [ "$(uname -m)" = "${bootc_host_arch}" ]; then
-  if unshare --user --map-root-user true 2>/dev/null; then
-    unshare --user --map-root-user --pid --fork --mount \
-      bash -c '
-        set -euo pipefail
-        mount -t proc proc "'"${TARGET_DIR}"'/proc"
-        chroot "'"${TARGET_DIR}"'" bootc container lint
-      ' || echo "warning: bootc container lint failed" >&2
-  else
-    echo "warning: skipping bootc container lint: user namespaces are unavailable" >&2
-  fi
+elif [ "$(uname -m)" = "${bootc_host_arch}" ] && [ -x "${bootc_ldso}" ]; then
+  "${bootc_ldso}" --library-path "${bootc_libpath}" "${bootc_bin}" \
+    container lint --rootfs "${TARGET_DIR}" || echo "warning: bootc container lint failed" >&2
 elif [ -n "${qemu_user}" ] && [ -x "${qemu_user}" ]; then
   "${qemu_user}" -L "${TARGET_DIR}" "${bootc_bin}" \
-    container lint --rootfs "${TARGET_DIR}" \
-    || echo "warning: bootc container lint failed" >&2
+    container lint --rootfs "${TARGET_DIR}" || echo "warning: bootc container lint failed" >&2
 else
   echo "warning: skipping bootc container lint: cannot run target bootc on host" >&2
 fi
