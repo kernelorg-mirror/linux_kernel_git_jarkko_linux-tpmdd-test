@@ -29,16 +29,6 @@ Builds every board defconfig; Buildroot downloads/ccache stay in `tpmdd-cache`.
 
 ## Running
 
-Define a `qemu:///session` domain named `tpmdd-<4 hex>` from the SHA-256 of
-the board image (stable across machines for the same image):
-
-```sh
-make install-virtd BOARD=tpmdd_amd64
-make install-virtd BOARD=tpmdd_arm64
-```
-
-Firmware comes from libvirt/EDK2 on the host. The domain is defined, not started.
-
 Flash images with `make burn` (requires `DEVICE`):
 
 ```sh

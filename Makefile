@@ -97,7 +97,7 @@ $(1).$(3):
 	touch "$$@"
 endef
 
-.PHONY: default help list download sdk clean-sdk configure build install-virtd burn ssh clean lint
+.PHONY: default help list download sdk clean-sdk configure build burn ssh clean lint
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -106,7 +106,7 @@ default: help
 
 $(eval $(call download,$(BUILDROOT_TARBALL),$(BUILDROOT_URL),$(BUILDROOT_HASH)))
 
-ifneq ($(filter configure build install-virtd burn ssh,$(MAKECMDGOALS)),)
+ifneq ($(filter configure build burn ssh,$(MAKECMDGOALS)),)
   ifndef BOARD
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
@@ -188,11 +188,6 @@ configure: $(SDK_INSTALL_STAMP) $(PATCH_STAMP) ## Run <BOARD>_defconfig
 
 build: configure ## Build <BOARD>
 	$(call buildroot,BR2_CCACHE=y)
-
-install-virtd: ## Define qemu:///session domain tpmdd-<hash> for <BOARD>
-	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT))
-	exec "$(CURDIR)/scripts/install-virtd.sh" \
-		"$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)" "$(SDK_ARCH)"
 
 ssh: ## Open an SSH session to <BOARD>
 	$(call require_artifact,$(BOARD_DIR)/images/ssh_config)
