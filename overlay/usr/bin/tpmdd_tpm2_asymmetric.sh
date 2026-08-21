@@ -6,23 +6,28 @@
 
 set -e
 
-export TPM2TOOLS_TCTI="${TPM2TOOLS_TCTI:-device:/dev/tpmrm0}"
-
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"; tpm2_clear' EXIT
+persistent_handle=
+cleanup()
+{
+  rc=$?
+  rm -rf "$WORK"
+  if [ -n "$persistent_handle" ]; then
+    tpm2sh delete "$persistent_handle" || true
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
 
 openssl ecparam -genkey -name prime256v1 -noout -out "$WORK/ec_key.pem"
 
-tpm2_createprimary --hierarchy o -G ecc -c "$WORK/primary.ctx"
-tpm2_evictcontrol -C o -c "$WORK/primary.ctx" 0x81000001
+handle=$(tpm2sh create-primary ecc-nist-p256:sha256)
+tpm2sh evict "$handle" 81000001
+persistent_handle=81000001
 
-tpm2_import -C 0x81000001 -G ecc \
-  -i "$WORK/ec_key.pem" \
-  -u "$WORK/key.pub" -r "$WORK/key.priv"
-
-tpm2_encodeobject -C 0x81000001 \
-  -u "$WORK/key.pub" -r "$WORK/key.priv" \
-  -o "$WORK/tpm2_key.pem"
+tpm2sh import --loadable 81000001 \
+  -I "$WORK/ec_key.pem" \
+  -O "$WORK/tpm2_key.pem"
 openssl asn1parse -inform pem -in "$WORK/tpm2_key.pem" \
   -noout -out "$WORK/tpm2_key.der"
 

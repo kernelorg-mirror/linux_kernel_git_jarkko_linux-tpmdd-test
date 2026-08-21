@@ -4,11 +4,20 @@
 
 set -e
 
-export TPM2TOOLS_TCTI="${TPM2TOOLS_TCTI:-device:/dev/tpmrm0}"
+persistent_handle=
+cleanup()
+{
+  rc=$?
+  if [ -n "$persistent_handle" ]; then
+    tpm2sh delete "$persistent_handle" || true
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
 
-tpm2_createprimary -C o -G rsa2048 -g sha256 -c /tmp/primary.ctx
-tpm2_evictcontrol -C o -c /tmp/primary.ctx 0x81000001
+handle=$(tpm2sh create-primary rsa-2048:sha256)
+tpm2sh evict "$handle" 81000001
+persistent_handle=81000001
 keyctl add trusted kmk 'new 32 keyhandle=0x81000001' @u
 keyctl add encrypted 1000100010001000 'new ecryptfs trusted:kmk 64' @u
 keyctl list @u | grep -q "2 keys in keyring:"
-tpm2_clear

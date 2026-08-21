@@ -12,4 +12,5 @@ menu "TPMDD packages"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/composefs/Config.in"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/bootc/Config.in"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/toolbx/Config.in"
+source "$BR2_EXTERNAL_TPMDD_PATH/package/tpm2sh/Config.in"
 endmenu
