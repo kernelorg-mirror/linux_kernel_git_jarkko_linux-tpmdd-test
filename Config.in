@@ -6,8 +6,6 @@ config BR2_TPMDD_LIVE_IMAGE
 	default y
 	select BR2_PACKAGE_HOST_DRACUT
 
-source "$BR2_EXTERNAL_TPMDD_PATH/fs/tpmdd-oci/Config.in"
-
 menu "TPMDD packages"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/composefs/Config.in"
 source "$BR2_EXTERNAL_TPMDD_PATH/package/bootc/Config.in"

@@ -45,7 +45,7 @@ esac
 
 initrd="${TARGET_DIR}/usr/lib/modules/${kver}/initramfs.img"
 rootfs_squashfs="${BINARIES_DIR}/rootfs.squashfs"
-oci_archive="${BINARIES_DIR}/image.tar"
+oci_archive="${BINARIES_DIR}/rootfs-oci-latest-${TPMDD_ARCH}-linux.oci-image.tar"
 image_ref="latest"
 target_imgref="${TPMDD_TARGET_IMGREF:-localhost/tpmdd:latest}"
 
@@ -84,7 +84,7 @@ fi
 printf '{"imgref":"oci:%s","target_imgref":"%s","digest":"%s","version":"%s"}\n' \
   "${image_ref}" "${target_imgref}" "${oci_digest}" "${TPMDD_VERSION}" \
   > "${BINARIES_DIR}/image.manifest"
-ln -sf image.tar "${BINARIES_DIR}/image-${TPMDD_VERSION}.tar"
+ln -sf "rootfs-oci-latest-${TPMDD_ARCH}-linux.oci-image.tar" "${BINARIES_DIR}/image-${TPMDD_VERSION}.tar"
 ln -sf image.manifest "${BINARIES_DIR}/image-${TPMDD_VERSION}.manifest"
 
 printf -v os_release '%s\n' \

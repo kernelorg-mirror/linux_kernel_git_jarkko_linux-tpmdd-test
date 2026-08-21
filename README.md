@@ -1,7 +1,7 @@
 # linux-tpmdd test suite
 
 bootc container host for linux-tpmdd kernel testing. Builds a live ISO/image
-and an OCI bootc image (`image.tar`).
+and an OCI bootc image (`rootfs-oci-latest-<arch>-linux.oci-image.tar`).
 
 ## Building
 
@@ -15,7 +15,7 @@ make build BOARD=tpmdd_arm64
 Artifacts under `build/<BOARD>/images/`:
 
 - `tpmdd_amd64.iso` / `tpmdd_arm64.img` — live test media
-- `image.tar` — OCI bootc container (`containers.bootc=1`)
+- `rootfs-oci-latest-<arch>-linux.oci-image.tar` — OCI bootc container (`containers.bootc=1`)
 - `image.manifest` — imgref/digest metadata
 - `ssh_config` — generated SSH client config
 
