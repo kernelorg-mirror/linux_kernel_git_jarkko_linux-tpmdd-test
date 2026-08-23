@@ -87,15 +87,6 @@ printf '{"imgref":"oci:%s","target_imgref":"%s","digest":"%s","version":"%s"}\n'
 ln -sf "rootfs-oci-latest-${TPMDD_ARCH}-linux.oci-image.tar" "${BINARIES_DIR}/image-${TPMDD_VERSION}.tar"
 ln -sf image.manifest "${BINARIES_DIR}/image-${TPMDD_VERSION}.manifest"
 
-printf -v os_release '%s\n' \
-  'NAME=tpmdd' \
-  'ID=tpmdd' \
-  "VERSION=\"${TPMDD_VERSION}\"" \
-  "VERSION_ID=${TPMDD_VERSION}" \
-  "PRETTY_NAME=\"linux-tpmdd ${TPMDD_VERSION} live test image\"" \
-  'IMAGE_ID=tpmdd' \
-  "IMAGE_VERSION=${TPMDD_VERSION}"
-
 build_uki() {
   local out=$1 cmdline=$2
 
@@ -105,7 +96,7 @@ build_uki() {
     --linux="${kernel}" \
     --initrd="${initrd}" \
     --cmdline="${cmdline}" \
-    --os-release="${os_release}" \
+    --os-release="@${TARGET_DIR}/usr/lib/os-release" \
     --uname="${kver}" \
     --output="${out}"
 }
