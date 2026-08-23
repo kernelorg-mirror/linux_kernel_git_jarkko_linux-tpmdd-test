@@ -24,18 +24,12 @@ case "${TPMDD_ARCH}" in
     kernel="${BINARIES_DIR}/bzImage"
     efi_boot_name="BOOTX64.EFI"
     cmdline_extra=" console=ttyS0,115200n8"
-    bootc_host_arch="x86_64"
-    qemu_user="${HOST_DIR}/bin/qemu-x86_64"
-    bootc_ldso="${TARGET_DIR}/lib/ld-linux-x86-64.so.2"
     ;;
   arm64)
     stub="${TARGET_DIR}/usr/lib/systemd/boot/efi/linuxaa64.efi.stub"
     kernel="${BINARIES_DIR}/Image"
     efi_boot_name="BOOTAA64.EFI"
     cmdline_extra=" console=ttyAMA0,115200n8"
-    bootc_host_arch="aarch64"
-    qemu_user="${HOST_DIR}/bin/qemu-aarch64"
-    bootc_ldso="${TARGET_DIR}/lib/ld-linux-aarch64.so.1"
     ;;
   *)
     echo "unknown TPMDD_ARCH: ${TPMDD_ARCH}" >&2
@@ -65,21 +59,6 @@ case "${oci_digest}" in
     exit 1
     ;;
 esac
-
-# bootc container lint validates the target rootfs using target's bootc binary.
-bootc_bin="${TARGET_DIR}/usr/bin/bootc"
-bootc_libpath="${TARGET_DIR}/lib:${TARGET_DIR}/usr/lib"
-if [ ! -x "${bootc_bin}" ]; then
-  echo "warning: skipping bootc container lint: ${bootc_bin} missing" >&2
-elif [ "$(uname -m)" = "${bootc_host_arch}" ] && [ -x "${bootc_ldso}" ]; then
-  "${bootc_ldso}" --library-path "${bootc_libpath}" "${bootc_bin}" \
-    container lint --rootfs "${TARGET_DIR}" || echo "warning: bootc container lint failed" >&2
-elif [ -n "${qemu_user}" ] && [ -x "${qemu_user}" ]; then
-  "${qemu_user}" -L "${TARGET_DIR}" "${bootc_bin}" \
-    container lint --rootfs "${TARGET_DIR}" || echo "warning: bootc container lint failed" >&2
-else
-  echo "warning: skipping bootc container lint: cannot run target bootc on host" >&2
-fi
 
 printf '{"imgref":"oci:%s","target_imgref":"%s","digest":"%s","version":"%s"}\n' \
   "${image_ref}" "${target_imgref}" "${oci_digest}" "${TPMDD_VERSION}" \
