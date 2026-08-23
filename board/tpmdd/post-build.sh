@@ -123,6 +123,12 @@ ln -sfT ../var/usrlocal "${TARGET_DIR}/usr/local"
 find "${TARGET_DIR}/etc/systemd/system" -type l -regextype posix-extended \
   -regex '.*/Cu[[:alnum:]]{6}' -delete
 
+mkdir -p "${TARGET_DIR}/etc/systemd/system/getty.target.wants"
+for n in 1 2 3 4 5 6; do
+  ln -sfn /usr/lib/systemd/system/getty@.service \
+    "${TARGET_DIR}/etc/systemd/system/getty.target.wants/getty@tty${n}.service"
+done
+
 # SSH key for the live image (lives under /var after the bootc reshape).
 SSH_DIR="${TARGET_DIR}/var/roothome/.ssh"
 install -d -m 0700 "${SSH_DIR}"
