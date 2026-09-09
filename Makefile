@@ -35,10 +35,19 @@ BUILDROOT_SRC_DIR		:= $(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
 # SDK
 # Relocated toolchains stay in the cache. Unpack and O= trees are
 # scratch under OUTPUT_DIR so `make clean` removes them.
+SDK_CONFIG_HASH			:= $(shell sha256sum $(sort $(wildcard sdk/*_defconfig)) | sha256sum | cut -d' ' -f1)
+ifneq ($(.SHELLSTATUS),0)
+$(error failed to hash SDK configurations)
+endif
+SDK_STAMP_KEY			:= $(shell printf '%s\n' '$(BUILDROOT_VERSION)' '$(BUILDROOT_HASH)' '$(SOURCE_DATE_EPOCH)' '$(SDK_CONFIG_HASH)' | sha256sum | cut -d' ' -f1)
+ifneq ($(.SHELLSTATUS),0)
+$(error failed to hash SDK inputs)
+endif
 SDK_DIR				:= $(CACHE_DIR)/sdk
-SDK_CACHE_DIR			:= $(SDK_DIR)/$(BUILDROOT_VERSION)
+SDK_CACHE_DIR			:= $(SDK_DIR)/$(BUILDROOT_VERSION)/$(SDK_STAMP_KEY)
+SDK_LOCK			:= $(CACHE_DIR)/.locks/sdk/$(SDK_STAMP_KEY)
 SDK_ROOT			= $(SDK_CACHE_DIR)/$(1)/$(1)-tpmdd-linux-gnu_sdk-buildroot
-SDK_BUILD_DIR			:= $(abspath $(OUTPUT_DIR))/sdk/$(BUILDROOT_VERSION)
+SDK_BUILD_DIR			:= $(OUTPUT_DIR_ABS)/sdk/$(BUILDROOT_VERSION)/$(SDK_STAMP_KEY)
 SDK_SRC_DIR			:= $(SDK_BUILD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
 SDK_ARCHS			:= $(patsubst sdk/%_defconfig,%,$(wildcard sdk/*_defconfig))
 ifdef BOARD
@@ -59,7 +68,6 @@ IMAGE_EXT			:= $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
 
 # Stamps
 PATCH_STAMP			:= $(STAMP_DIR)/$(BUILDROOT_VERSION)/patch
-SDK_UNPACK_STAMP		:= $(SDK_BUILD_DIR)/.stamp/unpack
 SDK_INSTALL_STAMP		:= $(SDK_CACHE_DIR)/.stamp/$(SDK_ARCH)/install
 
 # Buildroot invocation helper.
@@ -103,54 +111,16 @@ list: ## List available defconfigs
 
 download: $(BUILDROOT_TARBALL) ## Prime the download cache
 
-$(SDK_UNPACK_STAMP): $(BUILDROOT_TARBALL)
-	@mkdir -p "$(dir $@)"
-	echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
-	rm -rf "$(SDK_SRC_DIR)"
-	mkdir -p "$(SDK_SRC_DIR)"
-	tar -xf "$(BUILDROOT_TARBALL)" --strip-components=1 -C "$(SDK_SRC_DIR)"
-	touch "$@"
-
 define sdk_rules
 .PHONY: sdk-$(1)
 
 sdk-$(1): $(SDK_CACHE_DIR)/.stamp/$(1)/install
 
-$(SDK_BUILD_DIR)/.stamp/$(1)/build: $(SDK_UNPACK_STAMP) $(CURDIR)/sdk/$(1)_defconfig
-	mkdir -p "$(SDK_BUILD_DIR)/build/$(1)" "$(SDK_BUILD_DIR)/.stamp/$(1)"
-	$(MAKE) -C "$(SDK_SRC_DIR)" O="$(SDK_BUILD_DIR)/build/$(1)" \
-		BR2_DL_DIR="$(BUILDROOT_DL_DIR)" BR2_CCACHE_DIR="$(CCACHE_DIR)" \
-		SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
-		defconfig DEFCONFIG="$(CURDIR)/sdk/$(1)_defconfig"
-	$(MAKE) -C "$(SDK_SRC_DIR)" O="$(SDK_BUILD_DIR)/build/$(1)" \
-		BR2_DL_DIR="$(BUILDROOT_DL_DIR)" BR2_CCACHE_DIR="$(CCACHE_DIR)" \
-		SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
-		sdk
-	touch "$(SDK_BUILD_DIR)/.stamp/$(1)/build"
-
-# Install stamp lives in the cache and depends only on the defconfig, so a
-# populated toolchain is a hit after wiping OUTPUT_DIR.
-$(SDK_CACHE_DIR)/.stamp/$(1)/install: $(CURDIR)/sdk/$(1)_defconfig
-	sdk_root="$(call SDK_ROOT,$(1))"
-	if [ -x "$$$$sdk_root/relocate-sdk.sh" ] && [ ! "$(CURDIR)/sdk/$(1)_defconfig" -nt "$$$$sdk_root/relocate-sdk.sh" ]; then
-		mkdir -p "$(SDK_CACHE_DIR)/.stamp/$(1)"
-		touch "$(SDK_CACHE_DIR)/.stamp/$(1)/install"
-		exit 0
-	fi
-	$(MAKE) "$(SDK_BUILD_DIR)/.stamp/$(1)/build"
-	tarball="$$$$(echo "$(SDK_BUILD_DIR)/build/$(1)/images/"*_sdk-buildroot.tar.gz)"
-	test -f "$$$$tarball" || { \
-		echo "error: no SDK tarball in $(SDK_BUILD_DIR)/build/$(1)/images" >&2; \
-		exit 1; \
-	}
-	topdir="$$$${tarball##*/}"; topdir="$$$${topdir%.tar.gz}"
-	rm -rf "$(SDK_CACHE_DIR)/$(1)"
-	mkdir -p "$(SDK_CACHE_DIR)/$(1)"
-	tar -xzf "$$$$tarball" -C "$(SDK_CACHE_DIR)/$(1)"
-	test -x "$(SDK_CACHE_DIR)/$(1)/$$$$topdir/relocate-sdk.sh"
-	"$(SDK_CACHE_DIR)/$(1)/$$$$topdir/relocate-sdk.sh"
-	mkdir -p "$(SDK_CACHE_DIR)/.stamp/$(1)"
-	touch "$(SDK_CACHE_DIR)/.stamp/$(1)/install"
+$(SDK_CACHE_DIR)/.stamp/$(1)/install:
+	$$(MAKE) -- "$(BUILDROOT_TARBALL)"
+	MAKE="$$(MAKE)" ./scripts/build-sdk.sh "$(1)" "$(CURDIR)/sdk/$(1)_defconfig" \
+		"$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" "$(SDK_BUILD_DIR)" "$(SDK_SRC_DIR)" \
+		"$(SDK_CACHE_DIR)" "$(SDK_LOCK)" "$(BUILDROOT_DL_DIR)" "$(CCACHE_DIR)" "$(SOURCE_DATE_EPOCH)"
 endef
 $(foreach arch,$(SDK_ARCHS),$(eval $(call sdk_rules,$(arch))))
 
