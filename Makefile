@@ -27,7 +27,7 @@ BUILDROOT_VERSION		?= 2026.08-rc1
 BUILDROOT_HASH			?= fbb78d7e07ca91cc4def0a0730a332e5bcf2234b59f3b0c151104e2dc79ff6fe
 BUILDROOT_URL			?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
 BUILDROOT_DL_DIR		:= $(DOWNLOAD_DIR)/buildroot
-BUILDROOT_TARBALL		:= $(BUILDROOT_DL_DIR)/buildroot-$(BUILDROOT_VERSION).tar.xz
+BUILDROOT_TARBALL		:= $(BUILDROOT_DL_DIR)/source/$(BUILDROOT_HASH)/buildroot-$(BUILDROOT_VERSION).tar.xz
 BUILDROOT_PATCH			:= $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
 BUILDROOT_SRC_PATCHES		:= $(sort $(wildcard $(CURDIR)/patches/pkg-cargo/*.patch))
 BUILDROOT_SRC_DIR		:= $(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
@@ -82,21 +82,6 @@ define require_artifact
   fi
 endef
 
-define download
-$(1): $(1).$(3)
-	@mkdir -p "$(dir $(1))"
-	if [ ! -f "$(1)" ] || ! echo "$(3)  $(1)" | sha256sum --status -c -; then
-		curl -fL --retry 3 --connect-timeout 10 --progress-bar -o "$(1).partial" "$(2)"
-		echo "$(3)  $(1).partial" | sha256sum --status -c -
-		mv "$(1).partial" "$(1)"
-	fi
-	touch "$(1)"
-
-$(1).$(3):
-	@mkdir -p "$(dir $(1))"
-	touch "$$@"
-endef
-
 .PHONY: default help list download sdk clean-sdk configure build burn ssh clean lint
 
 help: ## Show this help
@@ -104,7 +89,8 @@ help: ## Show this help
 
 default: help
 
-$(eval $(call download,$(BUILDROOT_TARBALL),$(BUILDROOT_URL),$(BUILDROOT_HASH)))
+$(BUILDROOT_TARBALL):
+	./scripts/download.sh "$(BUILDROOT_URL)" "$(BUILDROOT_HASH)" "$@"
 
 ifneq ($(filter configure build burn ssh,$(MAKECMDGOALS)),)
   ifndef BOARD
