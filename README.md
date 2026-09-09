@@ -26,6 +26,8 @@ CONTAINER=docker ./scripts/build.sh
 ```
 
 Builds every board defconfig; Buildroot downloads/ccache stay in `tpmdd-cache`.
+Export `TPMDD_VERSION` and/or `TPMDD_TARGET_IMGREF` to override the image version
+and target image reference. Unset variables retain their build defaults.
 
 ## Running
 

@@ -25,6 +25,13 @@ for volume in tpmdd-build tpmdd-cache; do
     "${CONTAINER}" volume create "${volume}" >/dev/null
 done
 
+run_args=(--env OUTPUT_DIR=/build)
+for var in TPMDD_VERSION TPMDD_TARGET_IMGREF; do
+  if [ "${!var+x}" = x ]; then
+    run_args+=(--env "${var}")
+  fi
+done
+
 "${CONTAINER}" build "${build_args[@]}" .
 
 "${CONTAINER}" run \
@@ -32,7 +39,7 @@ done
   --init \
   --cpus "${CONTAINER_CPUS}" \
   --memory "${CONTAINER_MEMORY}" \
-  --env OUTPUT_DIR=/build \
+  "${run_args[@]}" \
   --volume "${PWD}:/workspace" \
   --volume tpmdd-build:/build \
   --volume tpmdd-cache:/cache \
