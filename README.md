@@ -29,7 +29,8 @@ Builds every board defconfig; Buildroot downloads/ccache stay in `tpmdd-cache`.
 
 ## Running
 
-Flash images with `make burn` (requires `DEVICE`):
+Build first with `make build BOARD=<BOARD>`. `make burn` only writes an existing
+image and requires `DEVICE`:
 
 ```sh
 make burn BOARD=tpmdd_amd64 DEVICE=/dev/sdX

@@ -141,21 +141,8 @@ ssh: ## Open an SSH session to <BOARD>
 	$(call require_artifact,$(BOARD_DIR)/images/ssh_config)
 	exec ssh -F "$(BOARD_DIR)/images/ssh_config" tpmdd.local
 
-burn: build ## Write image to DEVICE
-	@if [ -z "$(DEVICE)" ]; then
-		echo "error: DEVICE is required, e.g.: make burn BOARD=$(BOARD) DEVICE=/dev/sdX" >&2
-		exit 1
-	fi
-	if [ ! -b "$(DEVICE)" ]; then
-		echo "error: $(DEVICE) is not a block device" >&2
-		exit 1
-	fi
-	image="$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)"
-	if [ ! -f "$$image" ]; then
-		echo "error: $$image not found; run: make build BOARD=$(BOARD)" >&2
-		exit 2
-	fi
-	sudo dd if="$$image" of="$(DEVICE)" bs=1M status=progress oflag=sync
+burn: ## Write existing image to DEVICE (does not build)
+	./scripts/burn.sh "$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)" "$(DEVICE)" "$(BOARD)"
 
 clean: ## Remove build artifacts
 	rm -rf "$(abspath $(OUTPUT_DIR))" "$(SDK_CACHE_DIR)/src" "$(SDK_CACHE_DIR)/build"
