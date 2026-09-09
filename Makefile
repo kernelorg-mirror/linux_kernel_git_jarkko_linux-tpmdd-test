@@ -68,6 +68,7 @@ IMAGE_EXT			:= $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
 
 # Stamps
 PATCH_STAMP			:= $(STAMP_DIR)/$(BUILDROOT_VERSION)/patch
+PATCH_LOCK			:= $(OUTPUT_DIR_ABS)/.locks/$(BOARD).patch
 SDK_INSTALL_STAMP		:= $(SDK_CACHE_DIR)/.stamp/$(SDK_ARCH)/install
 
 # Buildroot invocation helper.
@@ -90,7 +91,7 @@ define require_artifact
   fi
 endef
 
-.PHONY: default help list download sdk clean-sdk configure build burn ssh clean lint
+.PHONY: default help list download sdk clean-sdk prepare-buildroot configure build burn ssh clean lint
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -100,7 +101,7 @@ default: help
 $(BUILDROOT_TARBALL):
 	./scripts/download.sh "$(BUILDROOT_URL)" "$(BUILDROOT_HASH)" "$@"
 
-ifneq ($(filter configure build burn ssh,$(MAKECMDGOALS)),)
+ifneq ($(filter prepare-buildroot configure build burn ssh,$(MAKECMDGOALS)),)
   ifndef BOARD
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
@@ -126,20 +127,11 @@ $(foreach arch,$(SDK_ARCHS),$(eval $(call sdk_rules,$(arch))))
 
 sdk: $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
 
-$(PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH) $(BUILDROOT_SRC_PATCHES)
-	@echo "$(BUILDROOT_HASH)  $(BUILDROOT_TARBALL)" | sha256sum --status -c -
-	src_dir="$(BUILDROOT_SRC_DIR)"
-	rm -rf "$$src_dir"
-	mkdir -p "$$src_dir"
-	tar -xf "$(BUILDROOT_TARBALL)" --strip-components=1 -C "$$src_dir"
-	patch -d "$$src_dir" -p1 -i "$(BUILDROOT_PATCH)"
-	for p in $(BUILDROOT_SRC_PATCHES); do
-		patch -d "$$src_dir" -p1 -i "$$p"
-	done
-	mkdir -p "$(dir $@)"
-	touch "$@"
+prepare-buildroot: $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH) $(BUILDROOT_SRC_PATCHES)
+	./scripts/setup-buildroot.sh "$(PATCH_LOCK)" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
+		"$(BOARD_DIR)" "$(BUILDROOT_SRC_DIR)" "$(PATCH_STAMP)" "$(BUILDROOT_PATCH)" $(BUILDROOT_SRC_PATCHES)
 
-configure: $(SDK_INSTALL_STAMP) $(PATCH_STAMP) ## Run <BOARD>_defconfig
+configure: $(SDK_INSTALL_STAMP) prepare-buildroot ## Run <BOARD>_defconfig
 	$(call buildroot,$(BOARD)_defconfig)
 
 build: configure ## Build <BOARD>
