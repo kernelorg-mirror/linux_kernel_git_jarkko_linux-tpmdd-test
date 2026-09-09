@@ -151,7 +151,4 @@ clean-sdk: ## Remove cached SDK toolchains
 	rm -rf "$(SDK_DIR)"
 
 lint: ## Run shellcheck
-	mapfile -t sh_files < <(git ls-files '*.sh')
-	if [ "$${#sh_files[@]}" -gt 0 ]; then
-		shellcheck -x "$${sh_files[@]}"
-	fi
+	./scripts/lint.sh
