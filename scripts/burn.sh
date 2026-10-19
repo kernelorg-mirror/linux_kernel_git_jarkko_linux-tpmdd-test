@@ -25,4 +25,10 @@ if [ ! -f "$image_path" ]; then
   exit 2
 fi
 
-sudo dd if="$image_path" of="$device" bs=1M status=progress oflag=sync
+if [[ $(uname -s) == Darwin ]]; then
+  diskutil unmountDisk "$device"
+  sudo dd if="$image_path" of="$device" bs=1m
+  sync
+else
+  sudo dd if="$image_path" of="$device" bs=1M status=progress oflag=sync
+fi
