@@ -9,8 +9,11 @@ CONTAINER=${CONTAINER:-docker}
 CONTAINER_CPUS=${CONTAINER_CPUS:-8}
 CONTAINER_MEMORY=${CONTAINER_MEMORY:-16G}
 
+container_kind=$(basename -- "${CONTAINER}")
+
 build_args=(--tag tpmdd-builder:latest)
-if [ "$(basename -- "${CONTAINER}")" = container ]; then
+if [ "${container_kind}" = container ]; then
+  "${CONTAINER}" system status >/dev/null 2>&1 || "${CONTAINER}" system start
   build_args=(
     --cpus "${CONTAINER_CPUS}"
     --memory "${CONTAINER_MEMORY}"
