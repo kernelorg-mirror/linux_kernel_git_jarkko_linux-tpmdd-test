@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-if (($# != 11)); then
-  echo "usage: $0 <arch> <defconfig> <tarball> <hash> <build_root> <src_dir> <install_root> <lock> <dl_dir> <ccache_dir> <epoch>" >&2
+if (($# != 9)); then
+  echo "usage: $0 <arch> <defconfig> <tarball> <hash> <sdk_build_dir> <sdk_install_root> <sdk_lock> <dl_dir> <epoch>" >&2
   exit 1
 fi
 
@@ -14,18 +14,10 @@ defconfig=$2
 tarball=$3
 hash=$4
 sdk_build_dir=$5
-src_dir=$6
-sdk_install_root=$7
-sdk_lock=$8
-dl_dir=$9
-ccache_dir=${10}
-epoch=${11}
-
-make_flags=${MAKEFLAGS-}
-if [[ ${make_flags%% *} == *n* ]]; then
-  exit 0
-fi
-
+sdk_install_root=$6
+sdk_lock=$7
+dl_dir=$8
+epoch=$9
 mkdir -p "$(dirname "$sdk_lock")"
 exec 9>"$sdk_lock"
 flock 9
@@ -35,39 +27,38 @@ if [[ -e "$install_stamp" ]]; then
   exit 0
 fi
 
-build_dir="${sdk_build_dir}/build/${arch}"
-build_stamp="${sdk_build_dir}/.stamp/${arch}/build"
-if [[ ! -e "$build_stamp" ]]; then
-  echo "$hash  $tarball" | sha256sum --status -c -
+echo "$hash  $tarball" | sha256sum --status -c -
 
-  unpack_stamp="${sdk_build_dir}/.stamp/unpack"
-  if [[ ! -e "$unpack_stamp" ]]; then
-    rm -rf "$src_dir"
-    mkdir -p "$src_dir"
-    tar -xf "$tarball" --strip-components=1 -C "$src_dir"
-    mkdir -p "$(dirname "$unpack_stamp")"
-    touch "$unpack_stamp"
-  fi
-
-  mkdir -p "$build_dir"
-  make_args=(
-    -C "$src_dir" O="$build_dir"
-    BR2_DL_DIR="$dl_dir" BR2_CCACHE_DIR="$ccache_dir"
-    SOURCE_DATE_EPOCH="$epoch"
-  )
-  "${MAKE:-make}" "${make_args[@]}" defconfig DEFCONFIG="$defconfig"
-  "${MAKE:-make}" "${make_args[@]}" sdk
-  mkdir -p "$(dirname "$build_stamp")"
-  touch "$build_stamp"
+src_dir="${sdk_build_dir}/src/buildroot"
+unpack_stamp="${sdk_build_dir}/.stamp/unpack"
+if [[ ! -e "$unpack_stamp" ]]; then
+  rm -rf "$src_dir"
+  mkdir -p "$src_dir"
+  tar -xf "$tarball" --strip-components=1 -C "$src_dir"
+  mkdir -p "$(dirname "$unpack_stamp")"
+  touch "$unpack_stamp"
 fi
+
+build_dir="${sdk_build_dir}/build/${arch}"
+mkdir -p "$build_dir"
+
+make_args=(
+  -C "$src_dir" O="$build_dir"
+  BR2_DL_DIR="$dl_dir"
+  BR2_CCACHE_DIR="${CCACHE_DIR:-${HOME}/.cache/tpmdd/ccache}"
+  SOURCE_DATE_EPOCH="$epoch"
+)
+
+make "${make_args[@]}" defconfig DEFCONFIG="$(realpath "$defconfig")"
+make "${make_args[@]}" sdk
 
 shopt -s nullglob
 tarballs=("$build_dir/images/"*_sdk-buildroot.tar.gz)
-if ((${#tarballs[@]} != 1)); then
-  echo "error: expected one SDK tarball in $build_dir/images, found ${#tarballs[@]}" >&2
+if ((${#tarballs[@]} == 0)); then
+  echo "error: no SDK tarball found in $build_dir/images" >&2
   exit 1
 fi
-sdk_archive=${tarballs[0]}
+sdk_archive="${tarballs[0]}"
 topdir="$(basename "$sdk_archive" .tar.gz)"
 
 dest_dir="${sdk_install_root}/${arch}"

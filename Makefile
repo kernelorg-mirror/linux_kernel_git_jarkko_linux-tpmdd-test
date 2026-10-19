@@ -48,7 +48,6 @@ SDK_CACHE_DIR			:= $(SDK_DIR)/$(BUILDROOT_VERSION)/$(SDK_STAMP_KEY)
 SDK_LOCK			:= $(CACHE_DIR)/.locks/sdk/$(SDK_STAMP_KEY)
 SDK_ROOT			= $(SDK_CACHE_DIR)/$(1)/$(1)-tpmdd-linux-gnu_sdk-buildroot
 SDK_BUILD_DIR			:= $(OUTPUT_DIR_ABS)/sdk/$(BUILDROOT_VERSION)/$(SDK_STAMP_KEY)
-SDK_SRC_DIR			:= $(SDK_BUILD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
 SDK_ARCHS			:= $(patsubst sdk/%_defconfig,%,$(wildcard sdk/*_defconfig))
 BOARDS				:= $(patsubst configs/%_defconfig,%,$(wildcard configs/*_defconfig))
 ifdef BOARD
@@ -113,20 +112,16 @@ list: ## List available defconfigs
 
 download: $(BUILDROOT_TARBALL) ## Prime the download cache
 
-define sdk_rules
-.PHONY: sdk-$(1)
+.PRECIOUS: $(SDK_CACHE_DIR)/.stamp/%/install
 
-sdk-$(1): $(SDK_CACHE_DIR)/.stamp/$(1)/install
-
-$(SDK_CACHE_DIR)/.stamp/$(1)/install:
-	$$(MAKE) -- "$(BUILDROOT_TARBALL)"
-	MAKE="$$(MAKE)" ./scripts/build-sdk.sh "$(1)" "$(CURDIR)/sdk/$(1)_defconfig" \
-		"$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" "$(SDK_BUILD_DIR)" "$(SDK_SRC_DIR)" \
-		"$(SDK_CACHE_DIR)" "$(SDK_LOCK)" "$(BUILDROOT_DL_DIR)" "$(CCACHE_DIR)" "$(SOURCE_DATE_EPOCH)"
-endef
-$(foreach arch,$(SDK_ARCHS),$(eval $(call sdk_rules,$(arch))))
+sdk-%: $(SDK_CACHE_DIR)/.stamp/%/install ;
 
 sdk: $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
+	rm -rf "$(SDK_BUILD_DIR)"
+
+$(SDK_CACHE_DIR)/.stamp/%/install: $(BUILDROOT_TARBALL) sdk/%_defconfig
+	./scripts/build-sdk.sh "$*" "sdk/$*_defconfig" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
+		"$(SDK_BUILD_DIR)" "$(SDK_CACHE_DIR)" "$(SDK_LOCK)" "$(BUILDROOT_DL_DIR)" "$(SOURCE_DATE_EPOCH)"
 
 prepare-buildroot: $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH) $(BUILDROOT_SRC_PATCHES)
 	./scripts/setup-buildroot.sh "$(PATCH_LOCK)" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
@@ -146,7 +141,7 @@ burn: ## Write existing image to DEVICE (does not build)
 	./scripts/burn.sh "$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)" "$(DEVICE)" "$(BOARD)"
 
 clean: ## Remove build artifacts
-	rm -rf "$(abspath $(OUTPUT_DIR))" "$(SDK_CACHE_DIR)/src" "$(SDK_CACHE_DIR)/build"
+	rm -rf "$(abspath $(OUTPUT_DIR))"
 
 clean-sdk: ## Remove cached SDK toolchains
 	rm -rf "$(SDK_DIR)"
