@@ -50,6 +50,7 @@ SDK_ROOT			= $(SDK_CACHE_DIR)/$(1)/$(1)-tpmdd-linux-gnu_sdk-buildroot
 SDK_BUILD_DIR			:= $(OUTPUT_DIR_ABS)/sdk/$(BUILDROOT_VERSION)/$(SDK_STAMP_KEY)
 SDK_SRC_DIR			:= $(SDK_BUILD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
 SDK_ARCHS			:= $(patsubst sdk/%_defconfig,%,$(wildcard sdk/*_defconfig))
+BOARDS				:= $(patsubst configs/%_defconfig,%,$(wildcard configs/*_defconfig))
 ifdef BOARD
 ifeq ($(wildcard configs/$(BOARD)_defconfig),)
 $(error unknown BOARD=$(BOARD); see `make list`)
@@ -108,7 +109,7 @@ ifneq ($(filter prepare-buildroot configure build burn ssh,$(MAKECMDGOALS)),)
 endif
 
 list: ## List available defconfigs
-	@cd configs && ls *_defconfig | sed 's/_defconfig//'
+	@printf '%s\n' $(BOARDS)
 
 download: $(BUILDROOT_TARBALL) ## Prime the download cache
 
