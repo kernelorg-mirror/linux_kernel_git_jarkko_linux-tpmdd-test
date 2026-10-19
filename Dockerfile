@@ -24,6 +24,7 @@ RUN apt-get -o APT::Retries=3 update \
         perl \
         python3 \
         rsync \
+        shellcheck \
         unzip \
         wget \
         xz-utils \
