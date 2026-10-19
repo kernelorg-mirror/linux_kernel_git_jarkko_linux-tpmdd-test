@@ -7,36 +7,24 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get -o APT::Retries=3 update \
     && apt-get -o APT::Retries=3 install -y --no-install-recommends \
-        bash \
         bc \
-        binutils \
         build-essential \
         bzip2 \
         ca-certificates \
         cmake \
-        coreutils \
         cpio \
         curl \
-        debianutils \
-        diffutils \
         file \
-        findutils \
         gawk \
         git \
         gosu \
-        gzip \
         locales \
-        make \
         openssh-client \
-        passwd \
         patch \
         perl \
         python3 \
         rsync \
-        sed \
-        tar \
         unzip \
-        util-linux \
         wget \
         xz-utils \
         zstd \
