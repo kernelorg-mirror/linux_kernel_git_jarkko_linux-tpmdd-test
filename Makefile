@@ -28,9 +28,11 @@ BUILDROOT_HASH			?= fbb78d7e07ca91cc4def0a0730a332e5bcf2234b59f3b0c151104e2dc79f
 BUILDROOT_URL			?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
 BUILDROOT_DL_DIR		:= $(DOWNLOAD_DIR)/buildroot
 BUILDROOT_TARBALL		:= $(BUILDROOT_DL_DIR)/source/$(BUILDROOT_HASH)/buildroot-$(BUILDROOT_VERSION).tar.xz
-BUILDROOT_PATCH			:= $(CURDIR)/buildroot-$(BUILDROOT_VERSION).patch
-BUILDROOT_SRC_PATCHES		:= $(sort $(wildcard $(CURDIR)/patches/pkg-cargo/*.patch))
-BUILDROOT_SRC_DIR		:= $(BOARD_DIR)/src/buildroot-$(BUILDROOT_VERSION)
+BUILDROOT_PATCH			:= $(CURDIR)/buildroot.patch
+BUILDROOT_PATCH_KEY		:= $(shell sha256sum $(BUILDROOT_PATCH) | cut -d' ' -f1)
+BUILDROOT_SRC_DIR		:= $(BOARD_DIR)/src/$(BUILDROOT_HASH)/buildroot-$(BUILDROOT_VERSION)
+BUILDROOT_PATCH_LOCK		:= $(OUTPUT_DIR_ABS)/.locks/$(BOARD).patch
+BUILDROOT_PATCH_STAMP		:= $(STAMP_DIR)/$(BUILDROOT_VERSION)/$(BUILDROOT_HASH)/$(BUILDROOT_PATCH_KEY)/patch
 
 # SDK
 # Relocated toolchains stay in the cache. Unpack and O= trees are
@@ -67,8 +69,6 @@ SDK_INSTALL_DIR			:= $(call SDK_ROOT,$(SDK_ARCH))
 IMAGE_EXT			:= $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
 
 # Stamps
-PATCH_STAMP			:= $(STAMP_DIR)/$(BUILDROOT_VERSION)/patch
-PATCH_LOCK			:= $(OUTPUT_DIR_ABS)/.locks/$(BOARD).patch
 SDK_INSTALL_STAMP		:= $(SDK_CACHE_DIR)/.stamp/$(SDK_ARCH)/install
 
 # Buildroot invocation helper.
@@ -91,7 +91,7 @@ define require_artifact
   fi
 endef
 
-.PHONY: default help list download sdk clean-sdk prepare-buildroot configure build burn ssh clean lint
+.PHONY: default help list download sdk clean-sdk configure build burn ssh clean lint
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -101,7 +101,7 @@ default: help
 $(BUILDROOT_TARBALL):
 	./scripts/download.sh "$(BUILDROOT_URL)" "$(BUILDROOT_HASH)" "$@"
 
-ifneq ($(filter prepare-buildroot configure build burn ssh,$(MAKECMDGOALS)),)
+ifneq ($(filter configure build burn ssh,$(MAKECMDGOALS)),)
   ifndef BOARD
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
@@ -123,11 +123,11 @@ $(SDK_CACHE_DIR)/.stamp/%/install: $(BUILDROOT_TARBALL) sdk/%_defconfig
 	./scripts/build-sdk.sh "$*" "sdk/$*_defconfig" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
 		"$(SDK_BUILD_DIR)" "$(SDK_CACHE_DIR)" "$(SDK_LOCK)" "$(BUILDROOT_DL_DIR)" "$(SOURCE_DATE_EPOCH)"
 
-prepare-buildroot: $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH) $(BUILDROOT_SRC_PATCHES)
-	./scripts/setup-buildroot.sh "$(PATCH_LOCK)" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
-		"$(BOARD_DIR)" "$(BUILDROOT_SRC_DIR)" "$(PATCH_STAMP)" "$(BUILDROOT_PATCH)" $(BUILDROOT_SRC_PATCHES)
+$(BUILDROOT_PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH)
+	./scripts/setup-buildroot.sh "$(BUILDROOT_PATCH_LOCK)" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
+		"$(BOARD_DIR)" "$(BUILDROOT_SRC_DIR)" "$@" "$(BUILDROOT_PATCH)"
 
-configure: $(SDK_INSTALL_STAMP) prepare-buildroot ## Run <BOARD>_defconfig
+configure: $(SDK_INSTALL_STAMP) $(BUILDROOT_PATCH_STAMP) ## Run <BOARD>_defconfig
 	$(call buildroot,$(BOARD)_defconfig)
 
 build: configure ## Build <BOARD>
