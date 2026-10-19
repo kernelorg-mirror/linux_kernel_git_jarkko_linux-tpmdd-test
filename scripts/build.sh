@@ -26,10 +26,8 @@ for volume in tpmdd-build tpmdd-cache; do
 done
 
 run_args=(--env OUTPUT_DIR=/build)
-for var in TPMDD_VERSION TPMDD_TARGET_IMGREF; do
-  if [ "${!var+x}" = x ]; then
-    run_args+=(--env "${var}")
-  fi
+for var in $(compgen -v TPMDD_); do
+  run_args+=(--env "${var}")
 done
 
 "${CONTAINER}" build "${build_args[@]}" .
