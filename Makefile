@@ -138,7 +138,8 @@ ssh: ## Open an SSH session to <BOARD>
 	exec ssh -F "$(BOARD_DIR)/images/ssh_config" tpmdd.local
 
 burn: ## Write existing image to DEVICE (does not build)
-	./scripts/burn.sh "$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)" "$(DEVICE)" "$(BOARD)"
+	$(call require_artifact,$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT))
+	./scripts/burn.sh "$(BOARD_DIR)/images/$(BOARD).$(IMAGE_EXT)" "$(DEVICE)"
 
 clean: ## Remove build artifacts
 	rm -rf "$(abspath $(OUTPUT_DIR))"
