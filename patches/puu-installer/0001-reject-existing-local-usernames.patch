@@ -1,0 +1,44 @@
+Subject: [PATCH] tui: reject existing local usernames before installation
+
+The initial account is provisioned by systemd-homed after installation.
+Existing local names cannot be registered there. Reject them in the identity
+form rather than completing a destructive installation without a usable
+account.
+
+Upstream-Status: Pending
+
+--- a/src/tui/app.cc
++++ b/src/tui/app.cc
+@@ -14,6 +14,7 @@
+ #include <cstdio>
+ #include <exception>
+ #include <filesystem>
++#include <fstream>
+ #include <functional>
+ #include <memory>
+ #include <mutex>
+@@ -795,6 +796,24 @@ void Installer::Impl::OnIdentitySubmit() {
+     validation_error_ = std::string(parsed_username.status().message());
+     return;
+   }
++  std::ifstream passwd("/etc/passwd");
++  if (!passwd.is_open()) {
++    validation_error_ = "Cannot read existing local accounts";
++    return;
++  }
++  const std::string account_prefix = fmt::format("{}:", username);
++  std::string entry;
++  while (std::getline(passwd, entry)) {
++    if (entry.starts_with(account_prefix)) {
++      validation_error_ = "User name is already used by a local account";
++      return;
++    }
++  }
++  if (passwd.bad()) {
++    validation_error_ = "Cannot read existing local accounts";
++    return;
++  }
++
+   if (password_.empty()) {
+     validation_error_ = "Password must not be empty";
+     return;

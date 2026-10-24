@@ -102,8 +102,19 @@ LOADER
 
   iso_root=$(mktemp -d "${BINARIES_DIR}/iso.XXXXXX")
   trap 'rm -rf "${iso_root}"' EXIT
-  mkdir -p "${iso_root}/LiveOS"
-  ln "${rootfs_squashfs}" "${iso_root}/LiveOS/squashfs.img"
+  mkdir -p "${iso_root}/root/LiveOS" "${iso_root}/root/payload"
+  [[ "${oci_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+  live_ssh="${BINARIES_DIR}/live-ssh"
+  install -d -m 0700 "${live_ssh}"
+  if [ ! -f "${live_ssh}/id-rsa" ]; then
+    ssh-keygen -C 'root@linux-tpmdd' -t rsa -f "${live_ssh}/id-rsa" -N ''
+  fi
+  fakeroot -- bash "${BOARD_DIR}/prepare-installer.sh" \
+    "${rootfs_squashfs}" "${iso_root}/live-root" \
+    "${iso_root}/root/LiveOS/squashfs.img" "${oci_digest}" \
+    "${oci_archive}" "${BOARD_DIR}/installer.yaml" "${live_ssh}"
+  ln "${oci_archive}" "${iso_root}/root/payload/image.tar"
+  ln "${BINARIES_DIR}/image.manifest" "${iso_root}/root/payload/image.manifest"
 
   xorriso -as mkisofs \
     -iso-level 3 \
@@ -117,7 +128,7 @@ LOADER
     -appended_part_as_gpt \
     -e --interval:appended_partition_2:all:: \
     -no-emul-boot \
-    "${iso_root}"
+    "${iso_root}/root"
 
   rm -rf "${iso_root}"
   trap - EXIT
@@ -198,6 +209,9 @@ case "${TPMDD_ARCH}" in
 esac
 
 SSH_DIR="${TARGET_DIR}/var/roothome/.ssh"
+if [ "${TPMDD_ARCH}" = amd64 ]; then
+  SSH_DIR="${BINARIES_DIR}/live-ssh"
+fi
 sed -e "s|@IDENTITY_FILE@|${SSH_DIR}/id-rsa|g" \
   <"${BOARD_DIR}/ssh_config.in" \
   >"${BINARIES_DIR}/ssh_config"

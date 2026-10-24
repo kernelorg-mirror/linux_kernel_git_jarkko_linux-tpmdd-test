@@ -44,6 +44,10 @@ IMAGE_VERSION=${tpmdd_version}
 OSREL
 ln -sfn ../usr/lib/os-release "${TARGET_DIR}/etc/os-release"
 
+if [ -f "${TARGET_DIR}/etc/sudoers.d/tpmdd" ]; then
+  chmod 0440 "${TARGET_DIR}/etc/sudoers.d/tpmdd"
+fi
+
 install -Dm755 "${BR2_EXTERNAL_TPMDD_PATH}/board/tpmdd/dracut-util" \
   "${TARGET_DIR}/usr/lib/dracut/dracut-util"
 install -Dm644 "${BR2_EXTERNAL_TPMDD_PATH}/board/tpmdd/dracut.conf" \
@@ -120,6 +124,8 @@ ln -sfT var/mnt "${TARGET_DIR}/mnt"
 ln -sfT var/home "${TARGET_DIR}/home"
 ln -sfT ../var/usrlocal "${TARGET_DIR}/usr/local"
 
+ln -sfn /dev/null "${TARGET_DIR}/etc/systemd/system/bootc-fetch-apply-updates.timer"
+
 find "${TARGET_DIR}/etc/systemd/system" -type l -regextype posix-extended \
   -regex '.*/Cu[[:alnum:]]{6}' -delete
 
@@ -129,11 +135,12 @@ for n in 1 2 3 4 5 6; do
     "${TARGET_DIR}/etc/systemd/system/getty.target.wants/getty@tty${n}.service"
 done
 
-# SSH key for the live image (lives under /var after the bootc reshape).
-SSH_DIR="${TARGET_DIR}/var/roothome/.ssh"
-install -d -m 0700 "${SSH_DIR}"
-if [ ! -f "${SSH_DIR}/id-rsa" ]; then
-  ssh-keygen -C 'root@tpmdd' -t rsa -f "${SSH_DIR}/id-rsa" -N ''
-  cp -f "${SSH_DIR}"/{id-rsa.pub,authorized_keys}
-  chmod 600 "${SSH_DIR}/authorized_keys"
+if [ "${TPMDD_ARCH}" = arm64 ]; then
+  SSH_DIR="${TARGET_DIR}/var/roothome/.ssh"
+  install -d -m 0700 "${SSH_DIR}"
+  if [ ! -f "${SSH_DIR}/id-rsa" ]; then
+    ssh-keygen -C 'root@tpmdd' -t rsa -f "${SSH_DIR}/id-rsa" -N ''
+    cp -f "${SSH_DIR}"/{id-rsa.pub,authorized_keys}
+    chmod 600 "${SSH_DIR}/authorized_keys"
+  fi
 fi

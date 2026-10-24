@@ -1,0 +1,28 @@
+branding:
+  name: linux-tpmdd
+
+partitions:
+  efi: 1G
+  rootMin: 8G
+  home: 4G
+
+labels:
+  root: tpmdd-root
+  home: tpmdd-home
+
+identity:
+  keymap: us
+  locale: en_US.UTF-8
+  timezone: UTC
+  hostname: linux-tpmdd
+
+homed:
+  groups: [wheel]
+
+image:
+  expectedDigest: "@OCI_DIGEST@"
+  sourceLabel: null
+  sourceMount: /run/initramfs/live/payload
+
+serialConsole:
+  x86_64: console=ttyS0,115200n8
