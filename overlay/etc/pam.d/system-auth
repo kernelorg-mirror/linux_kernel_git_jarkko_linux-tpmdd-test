@@ -1,0 +1,11 @@
+auth     [success=done authtok_err=bad perm_denied=bad maxtries=bad default=ignore] pam_systemd_home.so
+auth     required pam_unix.so nullok
+
+account  [success=done authtok_expired=bad new_authtok_reqd=bad maxtries=bad acct_expired=bad default=ignore] pam_systemd_home.so
+account  required pam_unix.so
+
+password sufficient pam_systemd_home.so
+password required pam_unix.so sha512 shadow
+
+session  optional pam_systemd_home.so
+session  required pam_unix.so

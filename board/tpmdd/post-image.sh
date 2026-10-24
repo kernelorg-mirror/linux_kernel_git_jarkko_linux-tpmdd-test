@@ -66,6 +66,13 @@ printf '{"imgref":"oci:%s","target_imgref":"%s","digest":"%s","version":"%s"}\n'
 ln -sf "rootfs-oci-latest-${TPMDD_ARCH}-linux.oci-image.tar" "${BINARIES_DIR}/image-${TPMDD_VERSION}.tar"
 ln -sf image.manifest "${BINARIES_DIR}/image-${TPMDD_VERSION}.manifest"
 
+[[ "${oci_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+live_ssh="${BINARIES_DIR}/live-ssh"
+install -d -m 0700 "${live_ssh}"
+if [ ! -f "${live_ssh}/id-rsa" ]; then
+  ssh-keygen -C 'root@linux-tpmdd' -t rsa -f "${live_ssh}/id-rsa" -N ''
+fi
+
 build_uki() {
   local out=$1 cmdline=$2
 
@@ -102,8 +109,13 @@ LOADER
 
   iso_root=$(mktemp -d "${BINARIES_DIR}/iso.XXXXXX")
   trap 'rm -rf "${iso_root}"' EXIT
-  mkdir -p "${iso_root}/LiveOS"
-  ln "${rootfs_squashfs}" "${iso_root}/LiveOS/squashfs.img"
+  mkdir -p "${iso_root}/root/LiveOS" "${iso_root}/root/payload"
+  fakeroot -- bash "${BOARD_DIR}/prepare-installer.sh" \
+    "${rootfs_squashfs}" "${iso_root}/live-root" \
+    "${iso_root}/root/LiveOS/squashfs.img" "${oci_digest}" \
+    "${oci_archive}" "${BOARD_DIR}/installer.yaml" "${live_ssh}"
+  ln "${oci_archive}" "${iso_root}/root/payload/image.tar"
+  ln "${BINARIES_DIR}/image.manifest" "${iso_root}/root/payload/image.manifest"
 
   xorriso -as mkisofs \
     -iso-level 3 \
@@ -117,7 +129,7 @@ LOADER
     -appended_part_as_gpt \
     -e --interval:appended_partition_2:all:: \
     -no-emul-boot \
-    "${iso_root}"
+    "${iso_root}/root"
 
   rm -rf "${iso_root}"
   trap - EXIT
@@ -131,8 +143,9 @@ build_arm64_image() {
   test -f "${BINARIES_DIR}/RPI4_EFI.fd"
 
   stage=$(mktemp -d "${BINARIES_DIR}/arm64.XXXXXX")
+  live_root=$(mktemp -d "${BINARIES_DIR}/arm64-live.XXXXXX")
   boot_vfat="${BINARIES_DIR}/tpmdd_arm64.vfat"
-  trap 'rm -rf "${stage}" "${boot_vfat}"' EXIT
+  trap 'rm -rf "${stage}" "${live_root}" "${boot_vfat}"' EXIT
 
   cp -a "${BINARIES_DIR}/rpi-firmware/." "${stage}/"
   install -m 0644 "${BINARIES_DIR}/RPI3_EFI.fd" "${stage}/RPI3_EFI.fd"
@@ -165,13 +178,18 @@ dtparam=spi=on
 dtoverlay=tpm-slb9670
 CFG
 
-  mkdir -p "${stage}/overlays" "${stage}/LiveOS"
+  mkdir -p "${stage}/overlays" "${stage}/LiveOS" "${stage}/payload"
   dtc -@ -I dts -O dtb -o "${stage}/overlays/tpm-slb9670.dtbo" \
     "${BOARD_DIR}/rpi/tpm-slb9670-overlay.dts"
 
   sd_cmdline="root=live:LABEL=TPMDD ${live_cmdline}${cmdline_extra} console=tty0"
   build_uki "${stage}/EFI/BOOT/${efi_boot_name}" "${sd_cmdline}"
-  ln "${rootfs_squashfs}" "${stage}/LiveOS/squashfs.img"
+  fakeroot -- bash "${BOARD_DIR}/prepare-installer.sh" \
+    "${rootfs_squashfs}" "${live_root}/root" \
+    "${stage}/LiveOS/squashfs.img" "${oci_digest}" \
+    "${oci_archive}" "${BOARD_DIR}/installer.yaml" "${live_ssh}"
+  ln "${oci_archive}" "${stage}/payload/image.tar"
+  ln "${BINARIES_DIR}/image.manifest" "${stage}/payload/image.manifest"
 
   rm -f \
     "${BINARIES_DIR}/tpmdd_arm64.img" \
@@ -179,7 +197,7 @@ CFG
     "${BINARIES_DIR}/tpmdd_arm64-rpi3b.img" \
     "${BINARIES_DIR}/tpmdd_arm64-rpi400.img" \
     "${boot_vfat}"
-  truncate -s 2G "${boot_vfat}"
+  truncate -s 4G "${boot_vfat}"
   mkfs.vfat -F 32 -n TPMDD "${boot_vfat}"
   (
     cd "${stage}"
@@ -188,7 +206,7 @@ CFG
 
   support/scripts/genimage.sh -c "${BOARD_DIR}/genimage-arm64.cfg"
 
-  rm -rf "${stage}" "${boot_vfat}"
+  rm -rf "${stage}" "${live_root}" "${boot_vfat}"
   trap - EXIT
 }
 
@@ -197,7 +215,7 @@ case "${TPMDD_ARCH}" in
   arm64) build_arm64_image ;;
 esac
 
-SSH_DIR="${TARGET_DIR}/var/roothome/.ssh"
+SSH_DIR="${BINARIES_DIR}/live-ssh"
 sed -e "s|@IDENTITY_FILE@|${SSH_DIR}/id-rsa|g" \
   <"${BOARD_DIR}/ssh_config.in" \
   >"${BINARIES_DIR}/ssh_config"

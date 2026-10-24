@@ -1,0 +1,111 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+import json
+import os
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+IDENTITY = Path("/var/lib/puu/identity.json")
+MAX_IDENTITY_SIZE = 64 * 1024
+
+
+class ProvisionError(Exception):
+    pass
+
+
+def homectl(arguments, *, identity=None):
+    result = subprocess.run(
+        ["/usr/bin/homectl", "--no-pager", "--no-ask-password", *arguments],
+        input=json.dumps(identity).encode() if identity is not None else None,
+        stdin=subprocess.DEVNULL if identity is None else None,
+        stdout=subprocess.PIPE if identity is None else subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env={"PATH": "/usr/bin:/usr/sbin", "SYSTEMD_LOG_TARGET": "null"},
+        timeout=180 if identity is not None else 30,
+        check=False,
+    )
+    return result
+
+
+def verify_record(actual, expected):
+    machine_id = Path("/etc/machine-id").read_text().strip()
+    binding = actual.get("binding", {}).get(machine_id, {})
+    effective = actual | {
+        key: binding[key]
+        for key in ("storage", "homeDirectory", "imagePath")
+        if key in binding
+    }
+    for key in ("userName", "shell", "homeDirectory", "storage", "imagePath"):
+        if effective.get(key) != expected[key]:
+            raise ProvisionError(f"homed identity differs in {key}")
+    if set(actual.get("memberOf", [])) != set(expected["memberOf"]):
+        raise ProvisionError("homed identity has different supplementary groups")
+    if (
+        actual["privileged"]["hashedPassword"]
+        != expected["privileged"]["hashedPassword"]
+    ):
+        raise ProvisionError("homed identity has different password credentials")
+
+
+def main():
+    if os.geteuid() != 0:
+        raise ProvisionError("firstboot provisioning requires root")
+    try:
+        metadata = IDENTITY.lstat()
+    except FileNotFoundError:
+        return
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != 0
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_size > MAX_IDENTITY_SIZE
+    ):
+        raise ProvisionError(
+            "staged identity must be a root-owned private regular file"
+        )
+    with IDENTITY.open("rb") as staging:
+        data = staging.read(MAX_IDENTITY_SIZE + 1)
+    if len(data) > MAX_IDENTITY_SIZE:
+        raise ProvisionError("staged identity is too large")
+    identity = json.loads(data)
+    identity.pop("preferredSessionLauncher", None)
+    username = identity["userName"]
+    with open("/etc/passwd", encoding="utf-8") as passwd:
+        if any(line.split(":", 1)[0] == username for line in passwd):
+            raise ProvisionError("refusing to shadow an existing local account")
+    result = homectl(["inspect", "--json=short", username])
+    if result.returncode != 0:
+        result = homectl(["create", "--identity=-"], identity=identity)
+        if result.returncode != 0:
+            raise ProvisionError(f"homectl create failed (exit {result.returncode})")
+        result = homectl(["inspect", "--json=short", username])
+    if result.returncode != 0:
+        raise ProvisionError(f"homectl inspect failed (exit {result.returncode})")
+    verify_record(json.loads(result.stdout), identity)
+    IDENTITY.unlink()
+    print("linux-tpmdd: firstboot homed identity provisioned")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except ProvisionError as error:
+        print(f"linux-tpmdd: firstboot provisioning failed: {error}", file=sys.stderr)
+        sys.exit(1)
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        RecursionError,
+        subprocess.TimeoutExpired,
+    ) as error:
+        print(
+            f"linux-tpmdd: firstboot provisioning failed ({type(error).__name__})",
+            file=sys.stderr,
+        )
+        sys.exit(1)

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+[Unit]
+Description=Provision linux-tpmdd initial homed account
+ConditionPathExists=/var/lib/puu/identity.json
+Requires=systemd-homed.service
+RequiresMountsFor=/var/lib/puu /var/home
+After=systemd-homed.service
+Before=systemd-user-sessions.service getty.target sshd.service ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/tpmdd/firstboot
+TimeoutStartSec=5min
+UMask=0077
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/puu
+
+[Install]
+WantedBy=multi-user.target
