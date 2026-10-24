@@ -12,9 +12,14 @@ make build BOARD=tpmdd_amd64
 make build BOARD=tpmdd_arm64
 ```
 
+After changing Buildroot package options, run `make clean` before rebuilding both
+targets. Incremental builds do not rebuild reverse dependencies and may otherwise
+combine incompatible binaries and libraries.
+
 Artifacts under `build/<BOARD>/images/`:
 
-- `tpmdd_amd64.iso` / `tpmdd_arm64.img` — live test media
+- `tpmdd_amd64.iso` — live test and offline installation media (UEFI)
+- `tpmdd_arm64.img` — live test media for Raspberry Pi
 - `rootfs-oci-latest-<arch>-linux.oci-image.tar` — OCI bootc container (`containers.bootc=1`)
 - `image.manifest` — imgref/digest metadata
 - `ssh_config` — generated SSH client config
