@@ -4,6 +4,11 @@
 
 set -e
 
-/usr/lib/kselftests/run_kselftest.sh -t tpm2:test_smoke.sh
-/usr/lib/kselftests/run_kselftest.sh -t tpm2:test_space.sh
-/usr/lib/kselftests/run_kselftest.sh -t tpm2:test_async.sh
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
+trap 'exit 1' HUP INT TERM
+cp -a /usr/lib/kselftests/. "$workdir/"
+
+"$workdir/run_kselftest.sh" -t tpm2:test_smoke.sh
+"$workdir/run_kselftest.sh" -t tpm2:test_space.sh
+"$workdir/run_kselftest.sh" -t tpm2:test_async.sh
