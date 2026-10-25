@@ -21,8 +21,22 @@ chown -R 0:0 "${stage}/var/roothome/.ssh"
 install -d "${stage}/usr/share/tpmdd"
 sed "s/@OCI_DIGEST@/${digest}/" "${installer_config}" \
   > "${stage}/usr/share/tpmdd/installer.yaml"
+grep -q '^PUU_INSTALLER_CONFIG=' "${stage}/etc/environment" 2>/dev/null ||
+  printf 'PUU_INSTALLER_CONFIG=/usr/share/tpmdd/installer.yaml\n' \
+    >> "${stage}/etc/environment"
+pam_config="${stage}/etc/pam.d/system-auth"
+test -f "${pam_config}"
+grep -q pam_env.so "${pam_config}" ||
+  printf 'session  required pam_env.so\n' >> "${pam_config}"
+install -d -m 0755 "${stage}/etc/sudoers.d"
+printf 'Defaults env_file=/etc/environment\n' \
+  > "${stage}/etc/sudoers.d/30-tpmdd-installer"
+chmod 0440 "${stage}/etc/sudoers.d/30-tpmdd-installer"
+chown 0:0 "${stage}/etc/sudoers.d/30-tpmdd-installer"
 chown -R 0:0 "${stage}/usr/share/tpmdd"
 touch -d "@${SOURCE_DATE_EPOCH}" \
   "${stage}/usr/share/tpmdd" "${stage}/usr/share/tpmdd/installer.yaml" \
-  "${stage}/etc/shadow"
+  "${stage}/etc/shadow" \
+  "${stage}/etc/environment" "${stage}/etc/pam.d/system-auth" \
+  "${stage}/etc/sudoers.d/30-tpmdd-installer"
 mksquashfs "${stage}" "${output}" -noappend -comp gzip
