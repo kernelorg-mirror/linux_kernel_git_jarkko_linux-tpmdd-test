@@ -1,0 +1,502 @@
+Subject: [PATCH] libostree: add an explicit systemd-boot backend
+
+Register systemd-boot as an explicitly selected OstreeBootloader. Delegate
+preparation and publication to the separately installed
+${prefix}/lib/ostree/ostree-systemd-boot helper, using the existing write_config
+and post_bls_sync hooks respectively. Preserve helper exit errors with command
+and output context, and report the backend as non-atomic.
+
+Force a new bootversion for non-noop writes so userspace-only deployment
+changes cannot bypass the helper through the bootlink-only optimization.
+Preparation sees the new BLS entries and populated bootlinks; publication runs
+only after the root BLS switch is synchronized. Recover interrupted publication
+before deployment writes or cleanup can remove referenced deployments or boot
+configurations. The helper recovers only a prepared generation with a pending
+marker in the active root BLS generation. Initial installation remains an
+installer operation via the helper's install command.
+
+Teach the fstab generator to recognize exact stable systemd-boot selectors,
+read their symlinks below the physical /sysroot, and validate deployment targets
+before extracting the stateroot. Leave the standard BLS bootlink parser intact.
+
+Include the matching Makefile.in registration to avoid autoreconf and new
+host build dependencies for the release tarball.
+
+Upstream-Status: Inappropriate [downstream systemd-boot helper protocol]
+
+diff --git a/Makefile-libostree.am b/Makefile-libostree.am
+index cffad41..4bc10d3 100644
+--- a/Makefile-libostree.am
++++ b/Makefile-libostree.am
+@@ -118,6 +118,8 @@ libostree_1_la_SOURCES = \
+ 	src/libostree/ostree-bootloader-aboot.c \
+ 	src/libostree/ostree-bootloader-grub2.h \
+ 	src/libostree/ostree-bootloader-grub2.c \
++	src/libostree/ostree-bootloader-systemd-boot.h \
++	src/libostree/ostree-bootloader-systemd-boot.c \
+ 	src/libostree/ostree-bootloader-zipl.h \
+ 	src/libostree/ostree-bootloader-zipl.c \
+ 	src/libostree/ostree-bootloader-syslinux.h \
+diff --git a/Makefile.in b/Makefile.in
+index 55b9949..b54d4b0 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -834,6 +834,8 @@ am__libostree_1_la_SOURCES_DIST =  \
+ 	src/libostree/ostree-bootloader-aboot.c \
+ 	src/libostree/ostree-bootloader-grub2.h \
+ 	src/libostree/ostree-bootloader-grub2.c \
++	src/libostree/ostree-bootloader-systemd-boot.h \
++	src/libostree/ostree-bootloader-systemd-boot.c \
+ 	src/libostree/ostree-bootloader-zipl.h \
+ 	src/libostree/ostree-bootloader-zipl.c \
+ 	src/libostree/ostree-bootloader-syslinux.h \
+@@ -958,6 +960,7 @@ am_libostree_1_la_OBJECTS =  \
+ 	src/libostree/libostree_1_la-ostree-bootloader.lo \
+ 	src/libostree/libostree_1_la-ostree-bootloader-aboot.lo \
+ 	src/libostree/libostree_1_la-ostree-bootloader-grub2.lo \
++	src/libostree/libostree_1_la-ostree-bootloader-systemd-boot.lo \
+ 	src/libostree/libostree_1_la-ostree-bootloader-zipl.lo \
+ 	src/libostree/libostree_1_la-ostree-bootloader-syslinux.lo \
+ 	src/libostree/libostree_1_la-ostree-bootloader-uboot.lo \
+@@ -1637,6 +1640,7 @@ am__depfiles_remade = bsdiff/$(DEPDIR)/libbsdiff_la-bsdiff.Plo \
+ 	src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-aboot.Plo \
+ 	src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-grub2.Plo \
+ 	src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-syslinux.Plo \
++	src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-systemd-boot.Plo \
+ 	src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-uboot.Plo \
+ 	src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-zipl.Plo \
+ 	src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader.Plo \
+@@ -2905,6 +2909,8 @@ libostree_1_la_SOURCES = src/libostree/ostree-async-progress.c \
+ 	src/libostree/ostree-bootloader-aboot.c \
+ 	src/libostree/ostree-bootloader-grub2.h \
+ 	src/libostree/ostree-bootloader-grub2.c \
++	src/libostree/ostree-bootloader-systemd-boot.h \
++	src/libostree/ostree-bootloader-systemd-boot.c \
+ 	src/libostree/ostree-bootloader-zipl.h \
+ 	src/libostree/ostree-bootloader-zipl.c \
+ 	src/libostree/ostree-bootloader-syslinux.h \
+@@ -4120,6 +4126,9 @@ src/libostree/libostree_1_la-ostree-bootloader-aboot.lo:  \
+ src/libostree/libostree_1_la-ostree-bootloader-grub2.lo:  \
+ 	src/libostree/$(am__dirstamp) \
+ 	src/libostree/$(DEPDIR)/$(am__dirstamp)
++src/libostree/libostree_1_la-ostree-bootloader-systemd-boot.lo:  \
++	src/libostree/$(am__dirstamp) \
++	src/libostree/$(DEPDIR)/$(am__dirstamp)
+ src/libostree/libostree_1_la-ostree-bootloader-zipl.lo:  \
+ 	src/libostree/$(am__dirstamp) \
+ 	src/libostree/$(DEPDIR)/$(am__dirstamp)
+@@ -5112,6 +5121,7 @@ distclean-compile:
+ @AMDEP_TRUE@@am__include@ @am__quote@src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-aboot.Plo@am__quote@ # am--include-marker
+ @AMDEP_TRUE@@am__include@ @am__quote@src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-grub2.Plo@am__quote@ # am--include-marker
+ @AMDEP_TRUE@@am__include@ @am__quote@src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-syslinux.Plo@am__quote@ # am--include-marker
++@AMDEP_TRUE@@am__include@ @am__quote@src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-systemd-boot.Plo@am__quote@ # am--include-marker
+ @AMDEP_TRUE@@am__include@ @am__quote@src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-uboot.Plo@am__quote@ # am--include-marker
+ @AMDEP_TRUE@@am__include@ @am__quote@src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-zipl.Plo@am__quote@ # am--include-marker
+ @AMDEP_TRUE@@am__include@ @am__quote@src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader.Plo@am__quote@ # am--include-marker
+@@ -5741,6 +5751,13 @@ src/libostree/libostree_1_la-ostree-bootloader-grub2.lo: src/libostree/ostree-bo
+ @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+ @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libostree_1_la_CFLAGS) $(CFLAGS) -c -o src/libostree/libostree_1_la-ostree-bootloader-grub2.lo `test -f 'src/libostree/ostree-bootloader-grub2.c' || echo '$(srcdir)/'`src/libostree/ostree-bootloader-grub2.c
+ 
++src/libostree/libostree_1_la-ostree-bootloader-systemd-boot.lo: src/libostree/ostree-bootloader-systemd-boot.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libostree_1_la_CFLAGS) $(CFLAGS) -MT src/libostree/libostree_1_la-ostree-bootloader-systemd-boot.lo -MD -MP -MF src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-systemd-boot.Tpo -c -o src/libostree/libostree_1_la-ostree-bootloader-systemd-boot.lo `test -f 'src/libostree/ostree-bootloader-systemd-boot.c' || echo '$(srcdir)/'`src/libostree/ostree-bootloader-systemd-boot.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-systemd-boot.Tpo src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-systemd-boot.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/libostree/ostree-bootloader-systemd-boot.c' object='src/libostree/libostree_1_la-ostree-bootloader-systemd-boot.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libostree_1_la_CFLAGS) $(CFLAGS) -c -o src/libostree/libostree_1_la-ostree-bootloader-systemd-boot.lo `test -f 'src/libostree/ostree-bootloader-systemd-boot.c' || echo '$(srcdir)/'`src/libostree/ostree-bootloader-systemd-boot.c
++
+ src/libostree/libostree_1_la-ostree-bootloader-zipl.lo: src/libostree/ostree-bootloader-zipl.c
+ @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libostree_1_la_CFLAGS) $(CFLAGS) -MT src/libostree/libostree_1_la-ostree-bootloader-zipl.lo -MD -MP -MF src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-zipl.Tpo -c -o src/libostree/libostree_1_la-ostree-bootloader-zipl.lo `test -f 'src/libostree/ostree-bootloader-zipl.c' || echo '$(srcdir)/'`src/libostree/ostree-bootloader-zipl.c
+ @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-zipl.Tpo src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-zipl.Plo
+@@ -10072,6 +10089,7 @@ distclean: distclean-recursive
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-aboot.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-grub2.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-syslinux.Plo
++	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-systemd-boot.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-uboot.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-zipl.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader.Plo
+@@ -10378,6 +10396,7 @@ maintainer-clean: maintainer-clean-recursive
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-aboot.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-grub2.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-syslinux.Plo
++	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-systemd-boot.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-uboot.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader-zipl.Plo
+ 	-rm -f src/libostree/$(DEPDIR)/libostree_1_la-ostree-bootloader.Plo
+diff --git a/man/ostree.repo-config.xml b/man/ostree.repo-config.xml
+index a9cc75b..cf4a1a3 100644
+--- a/man/ostree.repo-config.xml
++++ b/man/ostree.repo-config.xml
+@@ -385,7 +385,8 @@ License along with this library. If not, see <https://www.gnu.org/licenses/>.
+         deploying the sysroot.  This may take the values
+         <literal>bootloader=none</literal>, <literal>bootloader=auto</literal>,
+         <literal>bootloader=grub2</literal>, <literal>bootloader=syslinux</literal>,
+-        <literal>bootloader=uboot</literal> or <literal>bootloader=zipl</literal>.
++        <literal>bootloader=uboot</literal>, <literal>bootloader=zipl</literal> or
++        <literal>bootloader=systemd-boot</literal>.
+         Default is <literal>auto</literal>.
+         </para>
+         <para>
+@@ -403,7 +404,36 @@ License along with this library. If not, see <https://www.gnu.org/licenses/>.
+         <para>
+           A specific bootloader type may also be explicitly requested by choosing
+           <literal>grub2</literal>, <literal>syslinux</literal>, <literal>uboot</literal> or
+-          <literal>zipl</literal>.
++          <literal>zipl</literal>. The <literal>systemd-boot</literal> backend must be
++          explicitly selected and is never probed by <literal>auto</literal>.
++        </para>
++        <para>
++          The <literal>systemd-boot</literal> backend runs
++          <literal>/usr/lib/ostree/ostree-systemd-boot prepare SYSROOT BOOTVERSION</literal>
++          after writing BLS fragments to
++          <literal>SYSROOT/boot/loader.BOOTVERSION/entries</literal> and populating the
++          new bootlinks. The helper creates stable deployment symlinks independent of
++          the rotating bootlinks, copies and signs boot artifacts, and stages metadata.
++          After switching and synchronizing the root BLS configuration, OSTree runs
++          <literal>/usr/lib/ostree/ostree-systemd-boot commit SYSROOT BOOTVERSION</literal>
++          to publish the entries and default. The executable path uses the configured
++          installation prefix instead of <literal>/usr</literal> when different.
++          Every non-noop deployment write regenerates the bootloader configuration,
++          even when the kernel and arguments are unchanged. Updates are not atomic.
++          Before deployment writes or cleanup, the backend invokes
++          <literal>/usr/lib/ostree/ostree-systemd-boot recover SYSROOT</literal>
++          to complete any interrupted publication before referenced deployments or
++          boot configurations can be removed. Recovery checks
++          <literal>SYSROOT/boot/loader/systemd-boot/pending</literal> in the active
++          root BLS generation and does nothing if it is absent. Preparation persists
++          this marker last; commit removes it only after successful publication.
++          Recovery publishes the already prepared complete generation. A separate
++          boot service can invoke the same recovery command if the active marker
++          exists. These operations do not update EFI bootloader launchers.
++          The helper must be installed separately; the initial installer must run
++          <literal>/usr/lib/ostree/ostree-systemd-boot install-signed SYSROOT</literal> after
++          the initial deployment to configure <literal>sysroot.bootloader=systemd-boot</literal>
++          in the repository; use <literal>install-unsigned</literal> only for an explicitly unsigned installation.
+         </para>
+         </listitem>
+       </varlistentry>
+diff --git a/src/libostree/ostree-bootloader-systemd-boot.c b/src/libostree/ostree-bootloader-systemd-boot.c
+new file mode 100644
+index 0000000..e8dae00
+--- /dev/null
++++ b/src/libostree/ostree-bootloader-systemd-boot.c
+@@ -0,0 +1,141 @@
++/* SPDX-License-Identifier: LGPL-2.0-or-later */
++
++#include "config.h"
++
++#include "ostree-bootloader-systemd-boot.h"
++#include "ostree-repo-private.h"
++
++struct _OstreeBootloaderSystemdBoot
++{
++  GObject parent_instance;
++
++  OstreeSysroot *sysroot;
++};
++
++typedef GObjectClass OstreeBootloaderSystemdBootClass;
++
++static void _ostree_bootloader_systemd_boot_bootloader_iface_init (OstreeBootloaderInterface *iface);
++G_DEFINE_TYPE_WITH_CODE (
++    OstreeBootloaderSystemdBoot, _ostree_bootloader_systemd_boot, G_TYPE_OBJECT,
++    G_IMPLEMENT_INTERFACE (OSTREE_TYPE_BOOTLOADER,
++                           _ostree_bootloader_systemd_boot_bootloader_iface_init));
++
++static gboolean
++_ostree_bootloader_systemd_boot_query (OstreeBootloader *bootloader, gboolean *out_is_active,
++                                       GCancellable *cancellable, GError **error)
++{
++  *out_is_active = FALSE;
++  return TRUE;
++}
++
++static const char *
++_ostree_bootloader_systemd_boot_get_name (OstreeBootloader *bootloader)
++{
++  return "systemd-boot";
++}
++
++static gboolean
++run_helper (OstreeSysroot *sysroot, const char *phase, int bootversion, GCancellable *cancellable,
++            GError **error)
++{
++  const char *sysroot_path = gs_file_get_path_cached (ostree_sysroot_get_path (sysroot));
++  g_autofree char *bootversion_str = g_strdup_printf ("%d", bootversion);
++  const char *argv[] = { TARGET_PREFIX "/lib/ostree/ostree-systemd-boot", phase, sysroot_path,
++                         bootversion_str, NULL };
++  g_autofree char *stdout_buf = NULL;
++  g_autofree char *stderr_buf = NULL;
++  int status;
++
++  if (g_cancellable_set_error_if_cancelled (cancellable, error))
++    return FALSE;
++
++  if (!g_spawn_sync (NULL, (char **)argv, NULL, 0, NULL, NULL, &stdout_buf, &stderr_buf, &status,
++                     error))
++    return glnx_prefix_error (error, "Running %s %s %s %s", argv[0], phase, sysroot_path,
++                              bootversion_str);
++
++  if (!g_spawn_check_wait_status (status, error))
++    return glnx_prefix_error (error, "%s %s %s %s (stdout: %s; stderr: %s)", argv[0], phase,
++                              sysroot_path, bootversion_str, stdout_buf, stderr_buf);
++
++  if (*stdout_buf)
++    g_print ("%s", stdout_buf);
++  if (*stderr_buf)
++    g_printerr ("%s", stderr_buf);
++
++  return TRUE;
++}
++
++gboolean
++_ostree_bootloader_systemd_boot_recover (OstreeSysroot *sysroot, GCancellable *cancellable,
++                                       GError **error)
++{
++  if (ostree_sysroot_repo (sysroot)->bootloader != CFG_SYSROOT_BOOTLOADER_OPT_SYSTEMD_BOOT)
++    return TRUE;
++
++  return run_helper (sysroot, "recover", 0, cancellable, error);
++}
++
++static gboolean
++_ostree_bootloader_systemd_boot_write_config (OstreeBootloader *bootloader, int bootversion,
++                                              GPtrArray *new_deployments, GCancellable *cancellable,
++                                              GError **error)
++{
++  OstreeBootloaderSystemdBoot *self = OSTREE_BOOTLOADER_SYSTEMD_BOOT (bootloader);
++  return run_helper (self->sysroot, "prepare", bootversion, cancellable, error);
++}
++
++static gboolean
++_ostree_bootloader_systemd_boot_post_bls_sync (OstreeBootloader *bootloader, int bootversion,
++                                               GCancellable *cancellable, GError **error)
++{
++  OstreeBootloaderSystemdBoot *self = OSTREE_BOOTLOADER_SYSTEMD_BOOT (bootloader);
++  return run_helper (self->sysroot, "commit", bootversion, cancellable, error);
++}
++
++static gboolean
++_ostree_bootloader_systemd_boot_is_atomic (OstreeBootloader *bootloader)
++{
++  return FALSE;
++}
++
++static void
++_ostree_bootloader_systemd_boot_finalize (GObject *object)
++{
++  OstreeBootloaderSystemdBoot *self = OSTREE_BOOTLOADER_SYSTEMD_BOOT (object);
++
++  g_clear_object (&self->sysroot);
++
++  G_OBJECT_CLASS (_ostree_bootloader_systemd_boot_parent_class)->finalize (object);
++}
++
++static void
++_ostree_bootloader_systemd_boot_init (OstreeBootloaderSystemdBoot *self)
++{
++}
++
++static void
++_ostree_bootloader_systemd_boot_bootloader_iface_init (OstreeBootloaderInterface *iface)
++{
++  iface->query = _ostree_bootloader_systemd_boot_query;
++  iface->get_name = _ostree_bootloader_systemd_boot_get_name;
++  iface->write_config = _ostree_bootloader_systemd_boot_write_config;
++  iface->post_bls_sync = _ostree_bootloader_systemd_boot_post_bls_sync;
++  iface->is_atomic = _ostree_bootloader_systemd_boot_is_atomic;
++}
++
++static void
++_ostree_bootloader_systemd_boot_class_init (OstreeBootloaderSystemdBootClass *class)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (class);
++
++  object_class->finalize = _ostree_bootloader_systemd_boot_finalize;
++}
++
++OstreeBootloaderSystemdBoot *
++_ostree_bootloader_systemd_boot_new (OstreeSysroot *sysroot)
++{
++  OstreeBootloaderSystemdBoot *self = g_object_new (OSTREE_TYPE_BOOTLOADER_SYSTEMD_BOOT, NULL);
++  self->sysroot = g_object_ref (sysroot);
++  return self;
++}
+diff --git a/src/libostree/ostree-bootloader-systemd-boot.h b/src/libostree/ostree-bootloader-systemd-boot.h
+new file mode 100644
+index 0000000..f30bb36
+--- /dev/null
++++ b/src/libostree/ostree-bootloader-systemd-boot.h
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: LGPL-2.0-or-later */
++
++#pragma once
++
++#include "ostree-bootloader.h"
++
++G_BEGIN_DECLS
++
++#define OSTREE_TYPE_BOOTLOADER_SYSTEMD_BOOT (_ostree_bootloader_systemd_boot_get_type ())
++#define OSTREE_BOOTLOADER_SYSTEMD_BOOT(inst) \
++  (G_TYPE_CHECK_INSTANCE_CAST ((inst), OSTREE_TYPE_BOOTLOADER_SYSTEMD_BOOT, OstreeBootloaderSystemdBoot))
++#define OSTREE_IS_BOOTLOADER_SYSTEMD_BOOT(inst) \
++  (G_TYPE_CHECK_INSTANCE_TYPE ((inst), OSTREE_TYPE_BOOTLOADER_SYSTEMD_BOOT))
++
++typedef struct _OstreeBootloaderSystemdBoot OstreeBootloaderSystemdBoot;
++
++GType _ostree_bootloader_systemd_boot_get_type (void) G_GNUC_CONST;
++
++OstreeBootloaderSystemdBoot *_ostree_bootloader_systemd_boot_new (OstreeSysroot *sysroot);
++
++gboolean _ostree_bootloader_systemd_boot_recover (OstreeSysroot *sysroot, GCancellable *cancellable,
++                                                GError **error);
++
++G_END_DECLS
+diff --git a/src/libostree/ostree-impl-system-generator.c b/src/libostree/ostree-impl-system-generator.c
+index a21ff6b..dbad825 100644
+--- a/src/libostree/ostree-impl-system-generator.c
++++ b/src/libostree/ostree-impl-system-generator.c
+@@ -150,6 +150,37 @@ _ostree_sysroot_parse_bootlink_aboot (const char *bootlink, char **out_osname, G
+   return TRUE;
+ }
+ 
++static gboolean
++parse_systemd_boot_stateroot (const char *bootlink, char **out_stateroot, GError **error)
++{
++  g_autofree char *symlink_path = g_strconcat ("/sysroot", bootlink, NULL);
++  g_autofree char *symlink_val = glnx_readlinkat_malloc (AT_FDCWD, symlink_path, NULL, error);
++  if (!symlink_val)
++    return glnx_prefix_error (error, "Reading systemd-boot deployment symlink %s", symlink_path);
++
++  static gsize regex_initialized;
++  static GRegex *regex;
++  if (g_once_init_enter (&regex_initialized))
++    {
++      regex = g_regex_new ("\\A\\.\\./deploy/([A-Za-z0-9_.-]+)/deploy/[0-9a-f]{64}\\.[0-9]+\\z",
++                           0, 0, NULL);
++      g_assert (regex);
++      g_once_init_leave (&regex_initialized, 1);
++    }
++
++  g_autoptr (GMatchInfo) match = NULL;
++  if (!g_regex_match (regex, symlink_val, 0, &match))
++    return glnx_throw (error, "Invalid systemd-boot deployment symlink %s: %s", symlink_path,
++                       symlink_val);
++
++  g_autofree char *stateroot = g_match_info_fetch (match, 1);
++  if (g_str_equal (stateroot, ".") || g_str_equal (stateroot, ".."))
++    return glnx_throw (error, "Invalid systemd-boot stateroot: %s", stateroot);
++
++  *out_stateroot = g_steal_pointer (&stateroot);
++  return TRUE;
++}
++
+ /* Generate a drop-in for a mount unit to set DefaultDependencies=no.
+  *
+  * By default, systemd auto-generates mount units from /proc/self/mountinfo with
+@@ -344,6 +375,11 @@ fstab_generator (const char *ostree_target, const bool is_aboot, const char *nor
+       if (!_ostree_sysroot_parse_bootlink_aboot (ostree_target, &stateroot, error))
+         return glnx_prefix_error (error, "Parsing aboot stateroot");
+     }
++  else if (g_regex_match_simple ("\\A/ostree/systemd-boot/[0-9a-f]{64}\\z", ostree_target, 0, 0))
++    {
++      if (!parse_systemd_boot_stateroot (ostree_target, &stateroot, error))
++        return glnx_prefix_error (error, "Parsing systemd-boot stateroot");
++    }
+   else if (!_ostree_sysroot_parse_bootlink (ostree_target, NULL, &stateroot, NULL, NULL, error))
+     return glnx_prefix_error (error, "Parsing stateroot");
+ 
+diff --git a/src/libostree/ostree-repo-private.h b/src/libostree/ostree-repo-private.h
+index 77ea2a6..90c91ce 100644
+--- a/src/libostree/ostree-repo-private.h
++++ b/src/libostree/ostree-repo-private.h
+@@ -139,6 +139,7 @@ typedef enum
+   CFG_SYSROOT_BOOTLOADER_OPT_UBOOT,
+   CFG_SYSROOT_BOOTLOADER_OPT_ZIPL,
+   CFG_SYSROOT_BOOTLOADER_OPT_ABOOT,
++  CFG_SYSROOT_BOOTLOADER_OPT_SYSTEMD_BOOT,
+   /* Non-exhaustive */
+ } OstreeCfgSysrootBootloaderOpt;
+ 
+@@ -151,7 +152,7 @@ typedef enum
+ 
+ static const char *const CFG_SYSROOT_BOOTLOADER_OPTS_STR[] = {
+   /* This must be kept in the same order as the enum */
+-  "auto", "none", "grub2", "syslinux", "uboot", "zipl", "aboot", NULL,
++  "auto", "none", "grub2", "syslinux", "uboot", "zipl", "aboot", "systemd-boot", NULL,
+ };
+ 
+ /**
+diff --git a/src/libostree/ostree-sysroot-cleanup.c b/src/libostree/ostree-sysroot-cleanup.c
+index 6d2accd..a89452a 100644
+--- a/src/libostree/ostree-sysroot-cleanup.c
++++ b/src/libostree/ostree-sysroot-cleanup.c
+@@ -19,6 +19,7 @@
+ 
+ #include "config.h"
+ 
++#include "ostree-bootloader-systemd-boot.h"
+ #include "ostree-core-private.h"
+ #include "ostree-linuxfsutil.h"
+ #include "ostree-repo-private.h"
+@@ -549,6 +550,8 @@ _ostree_sysroot_cleanup_internal (OstreeSysroot *self, gboolean do_prune_repo,
+ 
+   if (!_ostree_sysroot_ensure_writable (self, error))
+     return FALSE;
++  if (!_ostree_bootloader_systemd_boot_recover (self, cancellable, error))
++    return FALSE;
+ 
+   if (!cleanup_other_bootversions (self, cancellable, error))
+     return glnx_prefix_error (error, "Cleaning bootversions");
+diff --git a/src/libostree/ostree-sysroot-deploy.c b/src/libostree/ostree-sysroot-deploy.c
+index 77b601f..2d48f91 100644
+--- a/src/libostree/ostree-sysroot-deploy.c
++++ b/src/libostree/ostree-sysroot-deploy.c
+@@ -39,6 +39,7 @@
+ 
+ #include "libglnx.h"
+ #include "ostree-bootconfig-parser-private.h"
++#include "ostree-bootloader-systemd-boot.h"
+ #include "ostree-core-private.h"
+ #include "ostree-deployment-private.h"
+ #include "ostree-kernel-args-private.h"
+@@ -2826,6 +2827,8 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot *self, GPtrArray *n
+ 
+   if (!_ostree_sysroot_ensure_writable (self, error))
+     return FALSE;
++  if (!_ostree_bootloader_systemd_boot_recover (self, cancellable, error))
++    return FALSE;
+   if (!_ostree_sysroot_ensure_boot_fd (self, error))
+     return FALSE;
+ 
+@@ -2958,6 +2961,9 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot *self, GPtrArray *n
+         }
+     }
+ 
++  if (ostree_sysroot_repo (self)->bootloader == CFG_SYSROOT_BOOTLOADER_OPT_SYSTEMD_BOOT)
++    requires_new_bootversion = TRUE;
++
+   gboolean found_booted_deployment = FALSE;
+   for (guint i = 0; i < new_deployments->len; i++)
+     {
+diff --git a/src/libostree/ostree-sysroot.c b/src/libostree/ostree-sysroot.c
+index 5b837bb..e8fd71b 100644
+--- a/src/libostree/ostree-sysroot.c
++++ b/src/libostree/ostree-sysroot.c
+@@ -31,6 +31,7 @@
+ #include "ostree-bootloader-aboot.h"
+ #include "ostree-bootloader-grub2.h"
+ #include "ostree-bootloader-syslinux.h"
++#include "ostree-bootloader-systemd-boot.h"
+ #include "ostree-bootloader-uboot.h"
+ #include "ostree-bootloader-zipl.h"
+ #include "ostree-core-private.h"
+@@ -1667,6 +1668,8 @@ _ostree_sysroot_new_bootloader_by_type (OstreeSysroot *sysroot,
+       return (OstreeBootloader *)_ostree_bootloader_grub2_new (sysroot);
+     case CFG_SYSROOT_BOOTLOADER_OPT_SYSLINUX:
+       return (OstreeBootloader *)_ostree_bootloader_syslinux_new (sysroot);
++    case CFG_SYSROOT_BOOTLOADER_OPT_SYSTEMD_BOOT:
++      return (OstreeBootloader *)_ostree_bootloader_systemd_boot_new (sysroot);
+     case CFG_SYSROOT_BOOTLOADER_OPT_ABOOT:
+       return (OstreeBootloader *)_ostree_bootloader_aboot_new (sysroot);
+     case CFG_SYSROOT_BOOTLOADER_OPT_UBOOT:
