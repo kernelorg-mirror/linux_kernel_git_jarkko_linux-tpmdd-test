@@ -1,0 +1,99 @@
+Subject: [PATCH] add deployment EFI signing helper
+
+Install puu-sign-efi STATE_ROOT EFI_FILE for runtime boot publication. Load
+only the existing database key, sign the EFI file in place, and verify the
+result. Missing keys and signing or verification failures are fatal; never
+generate replacement keys. Only paths are passed on the command line.
+
+STATE_ROOT is the root containing var/, such as /sysroot/ostree/deploy/bootc
+for deployment state or / when the machine's var is mounted there.
+
+Fix StepSign and StepEnrollKeys to pass that same root to KeyStore, which
+already appends var/lib/sbctl. The extra var component placed installer keys
+outside the machine key store needed by runtime updates. Existing image
+tests skipped Secure Boot and did not exercise these steps.
+
+Link the helper against puu-installer-core without FTXUI and install it
+alongside puu-installer through the existing runtime install rule.
+
+Upstream-Status: Pending
+
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -63,7 +63,10 @@ target_link_libraries(puu-installer-core PUBLIC
+ 
+ add_executable(puu-installer main.cc ${installer_tui_sources})
+ target_link_libraries(puu-installer PRIVATE puu-installer-core ftxui::component)
+-install(TARGETS puu-installer RUNTIME)
++
++add_executable(puu-sign-efi sign-efi.cc)
++target_link_libraries(puu-sign-efi PRIVATE puu-installer-core)
++install(TARGETS puu-installer puu-sign-efi RUNTIME)
+ 
+ # Assert-based checks over the GPT, Authenticode and SHA-512 crypt arithmetic.
+ # Keep assertions enabled regardless of build type: -UNDEBUG lands after the
+--- a/src/engine/steps.cc
++++ b/src/engine/steps.cc
+@@ -729,7 +729,7 @@ Status StepStageEspBoot(Runner& runner) {
+ 
+ Status StepSign(Runner& /*runner*/) {
+   PUU_ASSIGN_OR_RETURN(const std::filesystem::path state, StateRoot());
+-  KeyStore store(state / "var");
++  KeyStore store(state);
+   PUU_RETURN_IF_ERROR(store.EnsureKeys());
+   PUU_ASSIGN_OR_RETURN(const KeyPair database, store.Get(KeyKind::kDatabase));
+   PUU_ASSIGN_OR_RETURN(const std::vector<std::filesystem::path> binaries,
+@@ -765,7 +765,7 @@ Status StepSign(Runner& /*runner*/) {
+ 
+ Status StepEnrollKeys(Runner& /*runner*/) {
+   PUU_ASSIGN_OR_RETURN(const std::filesystem::path state, StateRoot());
+-  KeyStore store(state / "var");
++  KeyStore store(state);
+   PUU_RETURN_IF_ERROR(store.EnsureKeys());
+ 
+   Status status = store.Enroll();
+--- /dev/null
++++ b/src/sign-efi.cc
+@@ -0,0 +1,42 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++// Copyright (C) Opinsys Oy 2026
++
++#include <cstdio>
++#include <cstdlib>
++#include <filesystem>
++#include <string>
++
++#include "base/status.h"
++#include "engine/secureboot.h"
++
++namespace {
++
++puu::Status SignEfi(const std::filesystem::path& state_root,
++                    const std::filesystem::path& binary) {
++  const puu::engine::KeyStore store(state_root);
++  PUU_ASSIGN_OR_RETURN(const puu::engine::KeyPair database,
++                       store.Get(puu::engine::KeyKind::kDatabase));
++  PUU_RETURN_IF_ERROR(database.Sign(binary));
++  PUU_ASSIGN_OR_RETURN(const bool valid, database.Verify(binary));
++  if (!valid) {
++    return puu::InternalError("signature verification failed for {}",
++                              binary.string());
++  }
++  return absl::OkStatus();
++}
++
++}
++
++int main(int argc, char** argv) {
++  if (argc != 3 || argv[1][0] == '\0' || argv[2][0] == '\0') {
++    std::fprintf(stderr, "Usage: puu-sign-efi STATE_ROOT EFI_FILE\n");
++    return EXIT_FAILURE;
++  }
++
++  const puu::Status status = SignEfi(argv[1], argv[2]);
++  if (!status.ok()) {
++    std::fprintf(stderr, "puu-sign-efi: %s\n", status.ToString().c_str());
++    return EXIT_FAILURE;
++  }
++  return EXIT_SUCCESS;
++}
