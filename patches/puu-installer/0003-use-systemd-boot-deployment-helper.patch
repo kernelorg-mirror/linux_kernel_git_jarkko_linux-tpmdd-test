@@ -1,0 +1,32 @@
+Subject: [PATCH] engine: use the image's systemd-boot deployment helper
+
+Use the deployment publisher when the image provides one. Persist the
+operator's explicit signing choice and prepare the machine keys before
+publishing content-addressed kernels. Enable the OSTree backend for later
+upgrades and rollback instead of leaving a one-time ESP copy unmanaged.
+
+Upstream-Status: Pending
+
+--- a/src/engine/steps.cc
++++ b/src/engine/steps.cc
+@@ -708,6 +708,20 @@
+ 
+ Status StepStageEspBoot(Runner& runner) {
+   PUU_RETURN_IF_ERROR(MountEfi(runner));
++  const std::filesystem::path helper(
++      "/usr/lib/ostree/ostree-systemd-boot");
++  if (IsRegularFile(helper)) {
++    const bool sign =
++        runner.GetContext().secure_boot == SecureBootMode::kEnroll;
++    if (sign) {
++      PUU_ASSIGN_OR_RETURN(const std::filesystem::path state, StateRoot());
++      KeyStore store(state);
++      PUU_RETURN_IF_ERROR(store.EnsureKeys());
++    }
++    return Command(helper.string())
++        .Args({sign ? "install-signed" : "install-unsigned",
++               std::string(kTargetMount)}).Run();
++  }
+   const std::filesystem::path entries = InTarget("/boot/loader/entries");
+   const std::filesystem::path ostree = InTarget("/boot/ostree");
+   if (!IsDirectory(entries)) {
