@@ -1,0 +1,297 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+import fcntl
+import hashlib
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+MAX_ENTRY_SIZE = 64 * 1024
+ENTRY_NAME = re.compile(r"tpmdd-[0-9a-f]{64}\.conf")
+ARTIFACT = re.compile(r"/tpmdd/([0-9a-f]{64})\.(efi|initrd)")
+DEPLOYMENT = re.compile(r"ostree/deploy/[A-Za-z0-9_.-]+/deploy/[0-9a-f]{64}\.[0-9]+")
+TARGET = re.compile(r"(?<!\S)ostree=([^\s]+)")
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def read_entry(path):
+    with path.open("rb") as source:
+        data = source.read(MAX_ENTRY_SIZE + 1)
+    if len(data) > MAX_ENTRY_SIZE:
+        raise ValueError(f"boot entry is too large: {path}")
+    return data.decode("utf-8")
+
+
+def digest(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def replace_file(destination, *, source=None, data=None):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".tpmdd-", dir=destination.parent) as directory:
+        temporary = Path(directory) / "file"
+        if source is not None:
+            shutil.copyfile(source, temporary)
+        else:
+            temporary.write_bytes(data)
+        os.chmod(temporary, 0o600)
+        with temporary.open("rb") as stream:
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+        sync_directory(destination.parent)
+
+
+def esp_directory(root):
+    esp = root / "efi"
+    if Path("/run/ostree-booted").exists() and root.samefile("/sysroot"):
+        esp = Path("/efi")
+    if not os.path.ismount(esp):
+        raise ValueError(f"ESP is not mounted: {esp}")
+    filesystem = subprocess.run(
+        ["findmnt", "--noheadings", "--output", "FSTYPE", "--target", str(esp)],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    if filesystem != "vfat":
+        raise ValueError(f"ESP is not a FAT filesystem: {esp}")
+    return esp
+
+
+def active_version(root):
+    loader = (root / "boot/loader").resolve(strict=True)
+    if loader.parent != root / "boot" or loader.name not in ("loader.0", "loader.1"):
+        raise ValueError("unexpected OSTree boot loader directory")
+    return loader.name[-1]
+
+
+def deployment_for_entry(root, content):
+    options = [line.partition(" ")[2].strip() for line in content.splitlines() if line.startswith("options ")]
+    if len(options) != 1 or len(TARGET.findall(options[0])) != 1:
+        raise ValueError("expected one deployment selector per boot entry")
+    target = TARGET.search(options[0]).group(1)
+    if not target.startswith("/ostree/boot."):
+        raise ValueError("unexpected OSTree deployment selector")
+    deployment = (root / target.lstrip("/")).resolve(strict=True)
+    if not DEPLOYMENT.fullmatch(deployment.relative_to(root).as_posix()):
+        raise ValueError(f"unexpected deployment path: {deployment}")
+    return deployment
+
+
+def policy_path(deployment):
+    return deployment.parent.parent / "var/lib/ostree/systemd-boot/signing-policy"
+
+
+def signing_root(deployment):
+    policy = read_entry(policy_path(deployment)).strip()
+    if policy == "signed":
+        return deployment.parent.parent
+    if policy != "unsigned":
+        raise ValueError("invalid deployment signing policy")
+    for variable in Path("/sys/firmware/efi/efivars").glob("SecureBoot-*"):
+        value = variable.read_bytes()
+        if len(value) != 5 or value[4] != 0:
+            raise ValueError("unsigned boot policy requires Secure Boot to be disabled")
+    return None
+
+
+def artifact_paths(content):
+    paths = set()
+    for line in content.splitlines():
+        key, _, value = line.partition(" ")
+        if key in ("linux", "initrd"):
+            paths.update(value.split())
+    return paths
+
+
+def collect_artifacts(esp):
+    retained = set()
+    for entry in (esp / "loader/entries").glob("*.conf"):
+        retained.update(artifact_paths(read_entry(entry)))
+    directory = esp / "tpmdd"
+    if directory.exists():
+        for artifact in directory.iterdir():
+            name = "/tpmdd/" + artifact.name
+            if ARTIFACT.fullmatch(name) and name not in retained:
+                artifact.unlink()
+        sync_directory(directory)
+
+
+def prepare(root, esp, version):
+    loader = root / f"boot/loader.{version}"
+    entries = sorted((loader / "entries").glob("*.conf"))
+    if not entries or len(entries) > 256:
+        raise ValueError("expected between 1 and 256 OSTree boot entries")
+    stage = loader / "systemd-boot"
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir()
+    collect_artifacts(esp)
+    defaults = []
+    artifacts = {}
+    counter = 0
+    with tempfile.TemporaryDirectory(prefix=".tpmdd-", dir=loader) as directory:
+        for entry in entries:
+            content = read_entry(entry)
+            deployment = deployment_for_entry(root, content)
+            relative = deployment.relative_to(root).as_posix()
+            link_name = hashlib.sha256(relative.encode()).hexdigest()
+            link = root / "ostree/systemd-boot" / link_name
+            link.parent.mkdir(exist_ok=True)
+            if link.is_symlink():
+                if link.resolve(strict=True) != deployment:
+                    raise ValueError(f"deployment link changed: {link}")
+            else:
+                link.symlink_to(os.path.relpath(deployment, link.parent))
+            signer = signing_root(deployment)
+            rewritten = []
+            for line in content.splitlines():
+                key, _, value = line.partition(" ")
+                value = value.strip()
+                if key in ("linux", "initrd"):
+                    filenames = []
+                    for filename in value.split():
+                        if not filename.startswith("/boot/ostree/") or ".." in Path(filename).parts:
+                            raise ValueError(f"unexpected boot artifact: {filename}")
+                        source = (root / filename.lstrip("/")).resolve(strict=True)
+                        source.relative_to(root / "boot/ostree")
+                        temporary = Path(directory) / str(counter)
+                        counter += 1
+                        shutil.copyfile(source, temporary)
+                        if key == "linux" and signer is not None:
+                            subprocess.run(["/usr/bin/puu-sign-efi", str(signer), str(temporary)], check=True)
+                        suffix = ".efi" if key == "linux" else ".initrd"
+                        destination = "/tpmdd/" + digest(temporary) + suffix
+                        artifacts[destination] = temporary
+                        filenames.append(destination)
+                    line = key + " " + " ".join(filenames)
+                elif key == "options":
+                    line = "options " + TARGET.sub(f"ostree=/ostree/systemd-boot/{link_name}", value)
+                rewritten.append(line)
+            data = ("\n".join(rewritten) + "\n").encode()
+            name = "tpmdd-" + hashlib.sha256(data).hexdigest() + ".conf"
+            replace_file(stage / name, data=data)
+            priorities = [line.partition(" ")[2].strip() for line in rewritten if line.startswith("version ")]
+            if len(priorities) != 1:
+                raise ValueError(f"missing deployment priority in {entry}")
+            defaults.append((int(priorities[0]), name))
+        for filename, source in artifacts.items():
+            destination = esp / filename.lstrip("/")
+            if destination.exists():
+                if digest(destination) != ARTIFACT.fullmatch(filename).group(1):
+                    raise ValueError(f"published artifact digest mismatch: {destination}")
+            else:
+                replace_file(destination, source=source)
+    default = max(defaults, key=lambda item: item[0])[1]
+    replace_file(stage / "default", data=(default + "\n").encode())
+    replace_file(stage / "pending", data=b"pending\n")
+    os.sync()
+
+
+def commit(root, esp, version):
+    if active_version(root) != version:
+        raise ValueError("refusing to publish an inactive OSTree boot configuration")
+    stage = root / f"boot/loader.{version}/systemd-boot"
+    default = read_entry(stage / "default").strip()
+    wanted = {}
+    links = set()
+    for entry in stage.glob("*.conf"):
+        content = read_entry(entry)
+        name = "tpmdd-" + hashlib.sha256(content.encode()).hexdigest() + ".conf"
+        if name != entry.name:
+            raise ValueError(f"staged boot entry digest mismatch: {entry}")
+        targets = TARGET.findall(content)
+        if len(targets) != 1 or not re.fullmatch(r"/ostree/systemd-boot/[0-9a-f]{64}", targets[0]):
+            raise ValueError("invalid stable deployment selector")
+        (root / targets[0].lstrip("/")).resolve(strict=True)
+        links.add(Path(targets[0]).name)
+        for filename in artifact_paths(content):
+            match = ARTIFACT.fullmatch(filename)
+            if not match or digest(esp / filename.lstrip("/")) != match.group(1):
+                raise ValueError(f"staged artifact digest mismatch: {filename}")
+        wanted[name] = content.encode()
+    if not ENTRY_NAME.fullmatch(default) or default not in wanted:
+        raise ValueError("default boot entry is missing")
+    configuration = esp / "loader/loader.conf"
+    lines = read_entry(configuration).splitlines() if configuration.exists() else []
+    lines = [line for line in lines if not re.match(r"\s*default\s", line)]
+    lines.append("default " + default)
+    for name, data in wanted.items():
+        replace_file(esp / "loader/entries" / name, data=data)
+    replace_file(configuration, data=("\n".join(lines) + "\n").encode())
+    for entry in (esp / "loader/entries").glob("tpmdd-*.conf"):
+        if ENTRY_NAME.fullmatch(entry.name) and entry.name not in wanted:
+            entry.unlink()
+    sync_directory(esp / "loader/entries")
+    collect_artifacts(esp)
+    if not os.statvfs(root).f_flag & os.ST_RDONLY:
+        links = set()
+        for entry in (esp / "loader/entries").glob("*.conf"):
+            for target in TARGET.findall(read_entry(entry)):
+                if re.fullmatch(r"/ostree/systemd-boot/[0-9a-f]{64}", target):
+                    links.add(Path(target).name)
+        for link in (root / "ostree/systemd-boot").iterdir():
+            if link.is_symlink() and re.fullmatch(r"[0-9a-f]{64}", link.name) and link.name not in links:
+                link.unlink()
+        sync_directory(root / "ostree/systemd-boot")
+        (stage / "pending").unlink(missing_ok=True)
+        sync_directory(stage)
+    os.sync()
+
+
+def main():
+    if os.geteuid() != 0 or len(sys.argv) not in (3, 4):
+        raise ValueError("usage: ostree-systemd-boot PHASE SYSROOT [BOOTVERSION]")
+    phase = sys.argv[1]
+    root = Path(sys.argv[2]).resolve(strict=True)
+    if Path("/run/ostree-booted").exists() and root.samefile("/"):
+        root = Path("/sysroot").resolve(strict=True)
+    version = active_version(root) if phase == "recover" or len(sys.argv) == 3 else sys.argv[3]
+    if version not in ("0", "1"):
+        raise ValueError("invalid OSTree boot version")
+    if phase == "recover" and not (root / f"boot/loader.{version}/systemd-boot/pending").exists():
+        return
+    esp = esp_directory(root)
+    if phase in ("install-signed", "install-unsigned"):
+        for entry in (root / f"boot/loader.{version}/entries").glob("*.conf"):
+            policy = policy_path(deployment_for_entry(root, read_entry(entry)))
+            selected = phase.removeprefix("install-")
+            if policy.exists():
+                if read_entry(policy).strip() != selected:
+                    raise ValueError("refusing to change the installed signing policy")
+            else:
+                replace_file(policy, data=(selected + "\n").encode())
+        prepare(root, esp, version)
+        commit(root, esp, version)
+        subprocess.run([
+            "ostree", "--repo=" + str(root / "ostree/repo"), "config", "set",
+            "sysroot.bootloader", "systemd-boot",
+        ], check=True)
+    elif phase == "prepare":
+        prepare(root, esp, version)
+    elif phase in ("commit", "recover"):
+        commit(root, esp, version)
+    else:
+        raise ValueError("unknown boot publication phase")
+
+
+if __name__ == "__main__":
+    try:
+        with open("/run/ostree-systemd-boot.lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            main()
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"linux-tpmdd: boot publication failed: {error}", file=sys.stderr)
+        sys.exit(1)
