@@ -1,0 +1,14 @@
+[Unit]
+Description=Complete interrupted systemd-boot deployment publication
+ConditionPathExists=/run/ostree-booted
+ConditionPathExists=/sysroot/boot/loader/systemd-boot/pending
+RequiresMountsFor=/efi
+After=local-fs.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/ostree/ostree-systemd-boot recover /sysroot
+
+[Install]
+WantedBy=multi-user.target
