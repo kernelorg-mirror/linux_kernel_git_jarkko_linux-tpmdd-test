@@ -11,6 +11,7 @@ RUN apt-get -o APT::Retries=3 update \
         build-essential \
         bzip2 \
         ca-certificates \
+        clang \
         cmake \
         cpio \
         curl \
