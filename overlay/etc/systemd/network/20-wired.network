@@ -2,7 +2,7 @@
 # Copyright (C) 2024-2026 Jarkko Sakkinen <jarkko@kernel.org>
 
 [Match]
-Name=eth0
+Name=eth* en*
 
 [Network]
 DHCP=yes

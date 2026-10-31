@@ -4,6 +4,7 @@ branding:
 partitions:
   efi: 1G
   rootMin: 8G
+  swap: 8G
   home: 4G
 
 labels:
