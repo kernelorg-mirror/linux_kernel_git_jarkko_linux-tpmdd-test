@@ -1,0 +1,462 @@
+--- a/src/config.cc
++++ b/src/config.cc
+@@ -677,6 +677,7 @@ const auto& Sections() {
+               std::array{
+                   BindField("efi", &PartitionsConfig::efi, "512M"),
+                   BindField("rootMin", &PartitionsConfig::root_min, "64G"),
++                  BindField("swap", &PartitionsConfig::swap, ""),
+                   BindField("home", &PartitionsConfig::home, "256G")}},
+       SectionEntry{
+           .key = "labels",
+@@ -843,6 +844,13 @@ StatusOr<Config> Config::ParseYaml(std::string_view yaml) {
+     }
+   }
+ 
++  if (config.partitions.swap.has_value() &&
++      config.partitions.swap->Bytes() < kMiB) {
++    return InvalidArgumentError(
++        "partitions.swap is {} bytes but must be at least {} bytes",
++        config.partitions.swap->Bytes(), kMiB);
++  }
++
+   return config;
+ }
+ 
+@@ -861,8 +869,10 @@ StatusOr<Config> Config::Load(const std::filesystem::path& path) {
+ 
+ StatusOr<uint64_t> Config::MinTargetSizeBytes() const {
+   constexpr uint64_t kMax = std::numeric_limits<uint64_t>::max();
+-  const std::array<uint64_t, 4> parts = {
+-      partitions.efi.Bytes(), partitions.root_min.Bytes(),
++  const uint64_t swap_bytes =
++      partitions.swap.has_value() ? partitions.swap->Bytes() : 0;
++  const std::array<uint64_t, 5> parts = {
++      partitions.efi.Bytes(), partitions.root_min.Bytes(), swap_bytes,
+       partitions.home.Bytes(), kLayoutSlackBytes};
+   uint64_t total = 0;
+   for (const uint64_t part : parts) {
+--- a/src/config.h
++++ b/src/config.h
+@@ -187,6 +187,7 @@ struct BrandingConfig {
+ struct PartitionsConfig {
+   PartitionSize efi;
+   PartitionSize root_min;
++  std::optional<PartitionSize> swap;
+   PartitionSize home;
+ };
+ 
+--- a/src/engine/context.h
++++ b/src/engine/context.h
+@@ -57,10 +57,12 @@ struct DerivedPartitions {
+   std::filesystem::path efi_part;
+   std::filesystem::path root_part;
+   std::filesystem::path home_part;
++  std::optional<std::filesystem::path> swap_part;
+ 
+   std::string efi_uuid;
+   std::string root_uuid;
+   std::string home_uuid;
++  std::string swap_uuid;
+ 
+   std::optional<EfiPartitionLayout> layout;
+ };
+--- a/src/engine/guid.h
++++ b/src/engine/guid.h
+@@ -59,6 +59,13 @@ class EfiGuid {
+     return FromParts(0x0fc63daf, 0x8483, 0x4772,
+                      {0x8e, 0x79, 0x3d, 0x69, 0xd8, 0x47, 0x7d, 0xe4});
+   }
++
++  // Standard Linux swap partition type GUID:
++  // 0657fd6d-a4ab-43c4-84e5-0933c84b4f4f.
++  static constexpr EfiGuid LinuxSwapType() {
++    return FromParts(0x0657fd6d, 0xa4ab, 0x43c4,
++                     {0x84, 0xe5, 0x09, 0x33, 0xc8, 0x4b, 0x4f, 0x4f});
++  }
+   // Standard EFI X.509 certificate signature list type GUID:
+   // a5c059a1-94e4-4aa7-87b5-ab155c2bf072.
+   static constexpr EfiGuid CertX509() {
+--- a/src/engine/partition.cc
++++ b/src/engine/partition.cc
+@@ -259,9 +259,9 @@ uint64_t LastUsableLba(uint64_t disk_sectors, uint32_t sector_size) {
+          DivCeil(uint64_t{kEntryCount} * kEntrySize, sector_size) - 1;
+ }
+ 
+-StatusOr<std::array<EfiPartitionLayout, 3>> ComputeGptLayout(
++StatusOr<std::vector<EfiPartitionLayout>> ComputeGptLayout(
+     uint64_t disk_sectors, uint32_t sector_size, uint64_t efi_bytes,
+-    uint64_t home_bytes) {
++    uint64_t home_bytes, uint64_t swap_bytes) {
+   if (sector_size < 512 || sector_size % 512 != 0) {
+     return InvalidArgumentError("unusable sector size {}", sector_size);
+   }
+@@ -288,20 +288,34 @@ StatusOr<std::array<EfiPartitionLayout, 3>> ComputeGptLayout(
+   }
+   const uint64_t efi_end = efi_start + efi_sectors - 1;
+ 
++  uint64_t home_limit = last_usable;
++  uint64_t swap_start = 0;
++  if (swap_bytes > 0) {
++    const uint64_t swap_sectors = DivCeil(swap_bytes, sector_size);
++    if (swap_sectors > last_usable + 1 - first_usable) {
++      return FailedPreconditionError("no room for the swap partition");
++    }
++    swap_start = AlignDown(last_usable + 1 - swap_sectors, alignment);
++    if (swap_start < first_usable) {
++      return FailedPreconditionError("no room for the swap partition");
++    }
++    home_limit = swap_start - 1;
++  }
++
+   const uint64_t home_sectors = DivCeil(home_bytes, sector_size);
+-  if (home_sectors > last_usable + 1 - first_usable) {
++  if (home_sectors > home_limit + 1 - first_usable) {
+     return FailedPreconditionError("no room for the home partition");
+   }
+ 
+   const uint64_t home_start =
+-      AlignDown(last_usable + 1 - home_sectors, alignment);
++      AlignDown(home_limit + 1 - home_sectors, alignment);
+   const uint64_t root_start = AlignUp(efi_end + 1, alignment);
+   if (home_start < first_usable || home_start <= root_start) {
+     return FailedPreconditionError("no room for the root partition");
+   }
+   const uint64_t root_end = home_start - 1;
+ 
+-  return std::array<EfiPartitionLayout, 3>{
++  std::vector<EfiPartitionLayout> layout = {
+       EfiPartitionLayout{.partition_number = kEfiPartitionNumber,
+                          .start_lba = efi_start,
+                          .size_lba = efi_end - efi_start + 1},
+@@ -310,8 +324,15 @@ StatusOr<std::array<EfiPartitionLayout, 3>> ComputeGptLayout(
+                          .size_lba = root_end - root_start + 1},
+       EfiPartitionLayout{.partition_number = kHomePartitionNumber,
+                          .start_lba = home_start,
+-                         .size_lba = last_usable - home_start + 1},
++                         .size_lba = home_limit - home_start + 1},
+   };
++  if (swap_bytes > 0) {
++    layout.push_back(
++        EfiPartitionLayout{.partition_number = kSwapPartitionNumber,
++                           .start_lba = swap_start,
++                           .size_lba = last_usable - swap_start + 1});
++  }
++  return layout;
+ }
+ 
+ std::filesystem::path PartitionPath(const std::filesystem::path& drive,
+@@ -349,15 +370,21 @@ StatusOr<EfiPartitionLayout> PartitionDrive(const std::filesystem::path& drive,
+   PUU_ASSIGN_OR_RETURN(const uint64_t bytes, DriveBytes(file, drive));
+   const uint64_t disk_sectors = bytes / sector_size;
+ 
++  const uint64_t swap_bytes =
++      config.partitions.swap.has_value() ? config.partitions.swap->Bytes() : 0;
+   PUU_ASSIGN_OR_RETURN(
+       const auto layout,
+       ComputeGptLayout(disk_sectors, sector_size, config.partitions.efi.Bytes(),
+-                       config.partitions.home.Bytes()));
+-
+-  constexpr std::array<std::string_view, 3> kNames = {"EFI", "root", "home"};
+-  const std::array<EfiGuid, 3> types = {EfiGuid::EspType(),
+-                                        EfiGuid::LinuxFilesystemType(),
+-                                        EfiGuid::LinuxFilesystemType()};
++                       config.partitions.home.Bytes(), swap_bytes));
++
++  std::vector<std::string_view> names = {"EFI", "root", "home"};
++  std::vector<EfiGuid> types = {EfiGuid::EspType(),
++                                EfiGuid::LinuxFilesystemType(),
++                                EfiGuid::LinuxFilesystemType()};
++  if (config.partitions.swap.has_value()) {
++    names.emplace_back("swap");
++    types.push_back(EfiGuid::LinuxSwapType());
++  }
+ 
+   EfiPartitionLayout efi = layout[0];
+   std::vector<uint8_t> entries(size_t{kEntryCount} * kEntrySize, 0);
+@@ -365,7 +392,7 @@ StatusOr<EfiPartitionLayout> PartitionDrive(const std::filesystem::path& drive,
+     PUU_ASSIGN_OR_RETURN(const EfiGuid unique, EfiGuid::GenerateRandom());
+     WriteEntry(entries, layout[i].partition_number, types[i], unique,
+                layout[i].start_lba,
+-               layout[i].start_lba + layout[i].size_lba - 1, kNames[i]);
++               layout[i].start_lba + layout[i].size_lba - 1, names[i]);
+     if (layout[i].partition_number == kEfiPartitionNumber) {
+       efi.unique_guid = unique;
+     }
+--- a/src/engine/partition.h
++++ b/src/engine/partition.h
+@@ -19,13 +19,14 @@ namespace puu::engine {
+ inline constexpr uint32_t kEfiPartitionNumber = 1;
+ inline constexpr uint32_t kRootPartitionNumber = 2;
+ inline constexpr uint32_t kHomePartitionNumber = 3;
++inline constexpr uint32_t kSwapPartitionNumber = 4;
+ inline constexpr uint64_t kAlignmentBytes = 1024ULL * 1024;
+ 
+ uint64_t FirstUsableLba(uint32_t sector_size);
+ uint64_t LastUsableLba(uint64_t disk_sectors, uint32_t sector_size);
+-StatusOr<std::array<EfiPartitionLayout, 3>> ComputeGptLayout(
++StatusOr<std::vector<EfiPartitionLayout>> ComputeGptLayout(
+     uint64_t disk_sectors, uint32_t sector_size, uint64_t efi_bytes,
+-    uint64_t home_bytes);
++    uint64_t home_bytes, uint64_t swap_bytes = 0);
+ 
+ // Derives a partition device path from a whole-disk path. Disks whose name ends
+ // in a digit take a "p" separator, so /dev/nvme0n1 yields /dev/nvme0n1p1 while
+--- a/src/engine/pipeline.cc
++++ b/src/engine/pipeline.cc
+@@ -263,9 +263,10 @@ void CleanupStack::Push(std::function<void()> cleanup) {
+ void CleanupStack::Release() { cleanups_.clear(); }
+ 
+ std::string MergeFstab(std::string_view existing, std::string_view efi_partuuid,
+-                       std::string_view home_uuid) {
+-  constexpr std::array<std::string_view, 3> kManaged = {"/", "/efi",
+-                                                        "/var/home"};
++                       std::string_view home_uuid,
++                       std::string_view swap_uuid) {
++  constexpr std::array<std::string_view, 5> kManaged = {
++      "/", "/efi", "/var/home", "none", "swap"};
+   std::string merged;
+   while (!existing.empty()) {
+     const size_t newline = existing.find('\n');
+@@ -283,17 +284,27 @@ std::string MergeFstab(std::string_view existing, std::string_view efi_partuuid,
+   merged += fmt::format(
+       "PARTUUID={} /efi vfat fmask=0077,dmask=0077,nofail 0 2\n", efi_partuuid);
+   merged += fmt::format("UUID={} /var/home ext4 defaults 0 2\n", home_uuid);
++  if (!swap_uuid.empty()) {
++    merged += fmt::format("UUID={} none swap defaults 0 0\n", swap_uuid);
++  }
+   return merged;
+ }
+ 
+ StatusOr<std::vector<KernelArg>> InstallKernelArgs(std::string_view root_uuid,
+-                                                   const Config& config) {
++                                                   const Config& config,
++                                                   std::string_view swap_uuid) {
+   PUU_ASSIGN_OR_RETURN(const Arch machine, HostArch());
+   std::vector<KernelArg> args;
+-  args.reserve(kFixedKernelArgs.size() + 2);
++  args.reserve(kFixedKernelArgs.size() + 3);
+   PUU_ASSIGN_OR_RETURN(
+       KernelArg root, KernelArg::Parse(fmt::format("root=UUID={}", root_uuid)));
+   args.push_back(std::move(root));
++  if (!swap_uuid.empty()) {
++    PUU_ASSIGN_OR_RETURN(
++        KernelArg resume,
++        KernelArg::Parse(fmt::format("resume=UUID={}", swap_uuid)));
++    args.push_back(std::move(resume));
++  }
+   for (const std::string_view text : kFixedKernelArgs) {
+     PUU_ASSIGN_OR_RETURN(KernelArg arg, KernelArg::Parse(text));
+     args.push_back(std::move(arg));
+--- a/src/engine/pipeline.h
++++ b/src/engine/pipeline.h
+@@ -93,10 +93,12 @@ class CleanupStack {
+ // accumulate duplicates. The ESP is referenced by PARTUUID and home by
+ // filesystem UUID.
+ std::string MergeFstab(std::string_view existing, std::string_view efi_partuuid,
+-                       std::string_view home_uuid);
++                       std::string_view home_uuid,
++                       std::string_view swap_uuid = "");
+ 
+-StatusOr<std::vector<KernelArg>> InstallKernelArgs(std::string_view root_uuid,
+-                                                   const Config& config);
++StatusOr<std::vector<KernelArg>> InstallKernelArgs(
++    std::string_view root_uuid, const Config& config,
++    std::string_view swap_uuid = "");
+ 
+ // Locates the ostree deployment directory below the target root.
+ StatusOr<std::filesystem::path> DeploymentRoot(
+--- a/src/engine/steps.cc
++++ b/src/engine/steps.cc
+@@ -302,11 +302,18 @@ Status StepValidateDrive(Runner& runner) {
+   context.parts.efi_part = PartitionPath(context.drive, kEfiPartitionNumber);
+   context.parts.root_part = PartitionPath(context.drive, kRootPartitionNumber);
+   context.parts.home_part = PartitionPath(context.drive, kHomePartitionNumber);
++  if (context.config.partitions.swap.has_value()) {
++    context.parts.swap_part =
++        PartitionPath(context.drive, kSwapPartitionNumber);
++  }
+ 
+   InstallationLogger()->info(
+-      "target {} ({}; {}, {}, {})", context.drive.string(), HumanSize(size),
++      "target {} ({}; {}, {}, {}{})", context.drive.string(), HumanSize(size),
+       context.parts.efi_part.string(), context.parts.root_part.string(),
+-      context.parts.home_part.string());
++      context.parts.home_part.string(),
++      context.parts.swap_part.has_value()
++          ? fmt::format(", {}", context.parts.swap_part->string())
++          : "");
+   return absl::OkStatus();
+ }
+ 
+@@ -337,9 +344,13 @@ Status StepPartition(Runner& runner) {
+                        PartitionDrive(context.drive, context.config));
+ 
+   PUU_RETURN_IF_ERROR(WaitForUdevSettle(kDeviceTimeout));
+-  for (const std::filesystem::path* part :
+-       {&context.parts.efi_part, &context.parts.root_part,
+-        &context.parts.home_part}) {
++  std::vector<const std::filesystem::path*> parts = {
++      &context.parts.efi_part, &context.parts.root_part,
++      &context.parts.home_part};
++  if (context.parts.swap_part.has_value()) {
++    parts.push_back(&*context.parts.swap_part);
++  }
++  for (const std::filesystem::path* part : parts) {
+     PUU_RETURN_IF_ERROR(WaitForBlockDevice(*part, kDeviceTimeout));
+   }
+   return absl::OkStatus();
+@@ -388,6 +399,20 @@ Status StepFormatHome(Runner& runner) {
+   return absl::OkStatus();
+ }
+ 
++Status StepFormatSwap(Runner& runner) {
++  Context& context = runner.GetContext();
++  if (!context.parts.swap_part.has_value()) {
++    return absl::OkStatus();
++  }
++  const std::filesystem::path part = *context.parts.swap_part;
++  InstallationLogger()->info("formatting {} as swap", part.string());
++  Command command("mkswap");
++  PUU_RETURN_IF_ERROR(command.Args({"-L", "swap", part.string()}).Run());
++  PUU_ASSIGN_OR_RETURN(context.parts.swap_uuid,
++                       ProbeBlockTag(part, BlockTag::kUuid));
++  return absl::OkStatus();
++}
++
+ Status StepMount(Runner& runner) {
+   return MountTarget(runner.GetContext().parts.root_part, kTargetMount, "xfs",
+                      "");
+@@ -443,7 +468,8 @@ Status StepBootcInstall(Runner& runner) {
+   args.emplace_back("--skip-finalize");
+   PUU_ASSIGN_OR_RETURN(
+       const std::vector<KernelArg> kernel_args,
+-      InstallKernelArgs(context.parts.root_uuid, context.config));
++      InstallKernelArgs(context.parts.root_uuid, context.config,
++                        context.parts.swap_uuid));
+   for (const KernelArg& argument : kernel_args) {
+     args.emplace_back("--karg");
+     args.push_back(argument.Value());
+@@ -507,7 +533,8 @@ Status StepConfigureMounts(Runner& runner) {
+   }
+   return WriteFile(
+       fstab,
+-      MergeFstab(existing, context.parts.efi_uuid, context.parts.home_uuid),
++      MergeFstab(existing, context.parts.efi_uuid, context.parts.home_uuid,
++                 context.parts.swap_uuid),
+       kPublicFileMode);
+ }
+ 
+@@ -815,7 +842,7 @@ Status StepFinalCleanup(Runner& /*runner*/) {
+   return absl::OkStatus();
+ }
+ 
+-constexpr std::array<Step, 24> kSteps = {{
++constexpr std::array<Step, 25> kSteps = {{
+     {.title = "Verify dependencies", .run = &StepDependencies},
+     {.title = "Verify Secure Boot setup",
+      .run = &StepSetupMode,
+@@ -829,6 +856,7 @@ constexpr std::array<Step, 24> kSteps = {{
+     {.title = "Format EFI system partition", .run = &StepFormatEfi},
+     {.title = "Format root filesystem", .run = &StepFormatRoot},
+     {.title = "Format home filesystem", .run = &StepFormatHome},
++    {.title = "Format swap space", .run = &StepFormatSwap},
+     {.title = "Mount target filesystems", .run = &StepMount},
+     {.title = "Install bootc image", .run = &StepBootcInstall, .weight = 30},
+     {.title = "Mount home filesystem", .run = &StepMountHome},
+--- a/src/selfcheck.cc
++++ b/src/selfcheck.cc
+@@ -88,9 +88,10 @@ constexpr uint64_t kEfiBytes = uint64_t{1} << 30;
+ constexpr uint64_t kHomeBytes = uint64_t{128} << 30;
+ 
+ void CheckGptLayout() {
+-  const StatusOr<std::array<EfiPartitionLayout, 3>> layout =
++  const StatusOr<std::vector<EfiPartitionLayout>> layout =
+       ComputeGptLayout(kDiskSectors, kSectorSize, kEfiBytes, kHomeBytes);
+   assert(layout.ok());
++  assert(layout->size() == 3);
+ 
+   const EfiPartitionLayout& efi = (*layout)[0];
+   const EfiPartitionLayout& root = (*layout)[1];
+@@ -118,9 +119,45 @@ void CheckGptLayout() {
+   assert(efi.size_lba * kSectorSize >= kEfiBytes);
+   assert(home.size_lba * kSectorSize >= kHomeBytes);
+ 
++  // Test layout with swap enabled
++  constexpr uint64_t kSwapBytes = uint64_t{4} << 30;
++  const StatusOr<std::vector<EfiPartitionLayout>> swap_layout =
++      ComputeGptLayout(kDiskSectors, kSectorSize, kEfiBytes, kHomeBytes,
++                       kSwapBytes);
++  assert(swap_layout.ok());
++  assert(swap_layout->size() == 4);
++
++  const EfiPartitionLayout& s_efi = (*swap_layout)[0];
++  const EfiPartitionLayout& s_root = (*swap_layout)[1];
++  const EfiPartitionLayout& s_home = (*swap_layout)[2];
++  const EfiPartitionLayout& s_swap = (*swap_layout)[3];
++
++  assert(s_efi.partition_number == kEfiPartitionNumber);
++  assert(s_root.partition_number == kRootPartitionNumber);
++  assert(s_home.partition_number == kHomePartitionNumber);
++  assert(s_swap.partition_number == kSwapPartitionNumber);
++
++  for (const EfiPartitionLayout& part : *swap_layout) {
++    assert(part.size_lba > 0);
++    assert(part.start_lba >= first_usable);
++    assert(part.start_lba + part.size_lba - 1 <= last_usable);
++    assert(part.start_lba % alignment == 0);
++  }
++
++  assert(s_efi.start_lba + s_efi.size_lba <= s_root.start_lba);
++  assert(s_root.start_lba + s_root.size_lba == s_home.start_lba);
++  assert(s_home.start_lba + s_home.size_lba == s_swap.start_lba);
++  assert(s_swap.start_lba + s_swap.size_lba - 1 == last_usable);
++
++  assert(s_efi.size_lba * kSectorSize >= kEfiBytes);
++  assert(s_home.size_lba * kSectorSize >= kHomeBytes);
++  assert(s_swap.size_lba * kSectorSize >= kSwapBytes);
++
+   assert(!ComputeGptLayout(2048, kSectorSize, kEfiBytes, kHomeBytes).ok());
+   assert(!ComputeGptLayout(kDiskSectors, 500, kEfiBytes, kHomeBytes).ok());
+   assert(!ComputeGptLayout(kDiskSectors, kSectorSize, 0, kHomeBytes).ok());
++  assert(!ComputeGptLayout(kDiskSectors, kSectorSize, kEfiBytes, kHomeBytes,
++                           kDiskSectors * kSectorSize).ok());
+ }
+ 
+ void CheckAuthenticodeSkippedRanges() {
+@@ -203,6 +240,13 @@ void CheckShippedConfigSchema() {
+   // Defaults must satisfy the schema too, and unknown keys must still fail.
+   assert(Config::Defaults().flatpak.manifest_path ==
+          "/usr/share/puu/flatpaks.list");
++  assert(!Config::Defaults().partitions.swap.has_value());
++
++  const StatusOr<Config> with_swap =
++      Config::ParseYaml("partitions:\n  swap: 8G\n");
++  assert(with_swap.ok());
++  assert(with_swap->partitions.swap.has_value());
++  assert(with_swap->partitions.swap->Bytes() == (uint64_t{8} << 30));
+   assert(!Config::ParseYaml("flatpak:\n  nosuchkey: x\n").ok());
+   const auto obsolete = Config::ParseYaml("k3s:\n  helper: obsolete\n");
+   assert(!obsolete.ok());
+@@ -240,6 +284,11 @@ void CheckMergeFstab() {
+          std::string::npos);
+   assert(merged.find("/dev/sda4 /mnt/data ext4 defaults 0 2\n") !=
+          std::string::npos);
++
++  const std::string merged_swap =
++      MergeFstab(kExisting, "new-efi", "new-home", "new-swap");
++  assert(merged_swap.find("UUID=new-swap none swap defaults 0 0\n") !=
++         std::string::npos);
+ }
+ 
+ void CheckSpawnReportsPreExecFailure() {
+@@ -410,6 +459,10 @@ void CheckEfiGuid() {
+   const EfiGuid linux_fs = EfiGuid::LinuxFilesystemType();
+   assert(linux_fs.ToString() == "0fc63daf-8483-4772-8e79-3d69d8477de4");
+   assert(*EfiGuid::Parse("0fc63daf-8483-4772-8e79-3d69d8477de4") == linux_fs);
++
++  const EfiGuid linux_swap = EfiGuid::LinuxSwapType();
++  assert(linux_swap.ToString() == "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f");
++  assert(*EfiGuid::Parse("0657fd6d-a4ab-43c4-84e5-0933c84b4f4f") == linux_swap);
+   const EfiGuid cert_x509 = EfiGuid::CertX509();
+   assert(cert_x509.ToString() == "a5c059a1-94e4-4aa7-87b5-ab155c2bf072");
+   assert(*EfiGuid::Parse("a5c059a1-94e4-4aa7-87b5-ab155c2bf072") == cert_x509);
