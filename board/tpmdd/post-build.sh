@@ -53,16 +53,14 @@ install -Dm755 "${BR2_EXTERNAL_TPMDD_PATH}/board/tpmdd/dracut-util" \
 install -Dm644 "${BR2_EXTERNAL_TPMDD_PATH}/board/tpmdd/dracut.conf" \
   "${TARGET_DIR}/etc/dracut.conf.d/30-tpmdd.conf"
 
-# bootc/OSTree rootfs layout: mutable paths live under /var.
-for d in boot home root usr/local srv opt mnt var; do
+# bootc/composefs rootfs layout: mutable paths live under /var.
+for d in boot efi home root usr/local srv opt mnt var; do
   rm -rf "${TARGET_DIR:?}/${d}"
 done
 
 mkdir -p \
   "${TARGET_DIR}/sysroot" \
-  "${TARGET_DIR}/efi" \
   "${TARGET_DIR}/boot" \
-  "${TARGET_DIR}/usr/lib/ostree" \
   "${TARGET_DIR}/var" \
   "${TARGET_DIR}/var/tmp" \
   "${TARGET_DIR}/var/roothome" \
@@ -72,14 +70,6 @@ mkdir -p \
   "${TARGET_DIR}/var/mnt" \
   "${TARGET_DIR}/var/usrlocal" \
   "${TARGET_DIR}/usr/lib/tmpfiles.d"
-
-cat > "${TARGET_DIR}/usr/lib/ostree/prepare-root.conf" <<'PREPARE'
-[composefs]
-enabled = true
-[sysroot]
-readonly = true
-PREPARE
-
 {
   for dir in opt home srv mnt usrlocal; do
     echo "d /var/${dir} 0755 root root -"
@@ -116,7 +106,6 @@ trap cleanup_host_dracut_link EXIT
 cleanup_host_dracut_link
 trap - EXIT
 
-ln -sfT sysroot/ostree "${TARGET_DIR}/ostree"
 ln -sfT var/roothome "${TARGET_DIR}/root"
 ln -sfT var/srv "${TARGET_DIR}/srv"
 ln -sfT var/opt "${TARGET_DIR}/opt"
