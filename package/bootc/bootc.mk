@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-BOOTC_VERSION = 1.16.3
+BOOTC_VERSION = 1.16.10
 BOOTC_SITE = $(call github,bootc-dev,bootc,v$(BOOTC_VERSION))
 BOOTC_LICENSE = Apache-2.0 OR MIT
 BOOTC_LICENSE_FILES = LICENSE-APACHE LICENSE-MIT
@@ -15,6 +15,7 @@ BOOTC_DEPENDENCIES = \
 	composefs \
 	openssl \
 	libostree \
+	util-linux \
 	zstd
 
 # Upstream's `make install` chains through `bin -> manpages`, which re-invokes
@@ -43,21 +44,14 @@ define BOOTC_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/lib/bootc/bound-images.d
 	mkdir -p $(TARGET_DIR)/usr/lib/bootc/kargs.d
 	mkdir -p $(TARGET_DIR)/usr/lib/bootc/install
-	ln -sf ../../../sysroot/ostree/bootc/storage \
-		$(TARGET_DIR)/usr/lib/bootc/storage
 	$(INSTALL) -D -m 0644 -t $(TARGET_DIR)/usr/lib/systemd/system \
 		$(wildcard $(@D)/systemd/*.service) \
 		$(wildcard $(@D)/systemd/*.timer) \
 		$(wildcard $(@D)/systemd/*.path) \
 		$(wildcard $(@D)/systemd/*.target)
-	$(INSTALL) -D -m 0644 \
-		$(@D)/baseimage/base/usr/lib/ostree/prepare-root.conf \
-		$(TARGET_DIR)/usr/share/doc/bootc/baseimage/base/usr/lib/ostree/prepare-root.conf
-	mkdir -p $(TARGET_DIR)/usr/share/doc/bootc/baseimage/base/sysroot
-	cp -PfT $(@D)/baseimage/base/ostree \
-		$(TARGET_DIR)/usr/share/doc/bootc/baseimage/base/ostree
 	rm -rf $(TARGET_DIR)/usr/share/doc/bootc/baseimage/dracut \
 		$(TARGET_DIR)/usr/share/doc/bootc/baseimage/systemd
+	mkdir -p $(TARGET_DIR)/usr/share/doc/bootc/baseimage
 	cp -Prf $(@D)/baseimage/dracut \
 		$(TARGET_DIR)/usr/share/doc/bootc/baseimage/dracut
 	cp -Prf $(@D)/baseimage/systemd \

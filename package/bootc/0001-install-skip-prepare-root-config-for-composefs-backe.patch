@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jarkko Sakkinen <jarkko@kernel.org>
+Date: Tue, 10 Nov 2026 20:00:00 +0200
+Subject: [PATCH] install: skip prepare-root.conf when using composefs backend
+
+prepare_install() unconditionally calls
+ostree_prepareroot::require_config_from_root() even when
+--composefs-backend is passed, whereas prepareroot_config is only used
+by ostree_install(). Skip loading ostree/prepare-root.conf on composefs
+backend installs so images without ostree-prepare-root configuration can
+install cleanly.
+
+Signed-off-by: Jarkko Sakkinen <jarkko@kernel.org>
+---
+ crates/lib/src/install.rs | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/crates/lib/src/install.rs b/crates/lib/src/install.rs
+--- a/crates/lib/src/install.rs
++++ b/crates/lib/src/install.rs
+@@ -1766,7 +1766,9 @@ async fn prepare_install(
+     }
+ 
+     // Convert the keyfile to a hashmap because GKeyFile isnt Send for probably bad reasons.
+-    let prepareroot_config = {
++    let prepareroot_config = if composefs_options.composefs_backend {
++        HashMap::new()
++    } else {
+         let kf = ostree_prepareroot::require_config_from_root(&rootfs)?;
+         let mut r = HashMap::new();
+         for grp in kf.groups() {
+-- 
+2.47.3
