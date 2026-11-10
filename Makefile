@@ -23,6 +23,7 @@ CCACHE_DIR			:= $(CACHE_DIR)/ccache
 STAMP_DIR			:= $(BOARD_DIR)/stamp
 
 # Buildroot
+BUILDROOT_JOBS			?= 8
 BUILDROOT_VERSION		?= 2026.08-rc1
 BUILDROOT_HASH			?= fbb78d7e07ca91cc4def0a0730a332e5bcf2234b59f3b0c151104e2dc79ff6fe
 BUILDROOT_URL			?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
@@ -61,27 +62,21 @@ SDK_ARCH := $(strip $(if $(filter BR2_x86_64=y,$(file < configs/$(BOARD)_defconf
 ifeq ($(SDK_ARCH),)
 $(error configs/$(BOARD)_defconfig must select BR2_x86_64 or BR2_aarch64)
 endif
+TPMDD_ARCH := $(if $(filter x86_64,$(SDK_ARCH)),amd64,arm64)
 else
 SDK_ARCH :=
+TPMDD_ARCH :=
 endif
 
 SDK_INSTALL_DIR			:= $(call SDK_ROOT,$(SDK_ARCH))
-IMAGE_EXT			:= $(if $(filter tpmdd_arm64,$(BOARD)),img,iso)
-
-# Stamps
 SDK_INSTALL_STAMP		:= $(SDK_CACHE_DIR)/.stamp/$(SDK_ARCH)/install
+IMAGE_EXT			:= $(if $(filter arm64,$(TPMDD_ARCH)),img,iso)
 
-# Buildroot invocation helper.
-# BR2_REPRODUCIBLE lives in the defconfigs; it is a Kconfig bool, not
-# option env=, so a make-line override would not reach .config.
-define buildroot
-  $(MAKE) -C "$(BUILDROOT_SRC_DIR)" O="$(BOARD_DIR)" \
-    BR2_EXTERNAL="$(CURDIR)" \
-    BR2_CCACHE_DIR="$(CCACHE_DIR)" BR2_DL_DIR="$(BUILDROOT_DL_DIR)" \
-    SDK_INSTALL_DIR="$(SDK_INSTALL_DIR)" \
-    TPMDD_VERSION="$(TPMDD_VERSION)" SOURCE_DATE_EPOCH="$(SOURCE_DATE_EPOCH)" \
-    $(1)
-endef
+export BOARD BOARD_DIR TPMDD_ARCH TPMDD_VERSION SOURCE_DATE_EPOCH
+export BUILDROOT_JOBS BUILDROOT_SRC_DIR BUILDROOT_DL_DIR
+export BUILDROOT_TARBALL BUILDROOT_HASH BUILDROOT_PATCH
+export BUILDROOT_PATCH_STAMP BUILDROOT_PATCH_LOCK
+export SDK_INSTALL_DIR SDK_INSTALL_STAMP CCACHE_DIR
 
 # Require a build artifact, erroring with a build hint if missing.
 define require_artifact
@@ -91,7 +86,7 @@ define require_artifact
   fi
 endef
 
-.PHONY: default help list download sdk clean-sdk configure build burn ssh clean lint
+.PHONY: default help list download sdk clean-sdk configure savedefconfig linux-update-defconfig build burn ssh clean lint
 
 help: ## Show this help
 	@awk -F ':[^#]*## ?' '/^[a-z_-]+:[^#]*##/{printf "  make %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -101,7 +96,7 @@ default: help
 $(BUILDROOT_TARBALL):
 	./scripts/download.sh "$(BUILDROOT_URL)" "$(BUILDROOT_HASH)" "$@"
 
-ifneq ($(filter configure build burn ssh,$(MAKECMDGOALS)),)
+ifneq ($(filter configure savedefconfig linux-update-defconfig build burn ssh,$(MAKECMDGOALS)),)
   ifndef BOARD
     $(error BOARD is required, e.g.: make build BOARD=tpmdd_amd64)
   endif
@@ -120,18 +115,20 @@ sdk: $(addprefix sdk-,$(SDK_ARCHS)) ## Build and cache SDK toolchains
 	rm -rf "$(SDK_BUILD_DIR)"
 
 $(SDK_CACHE_DIR)/.stamp/%/install: $(BUILDROOT_TARBALL) sdk/%_defconfig
-	./scripts/build-sdk.sh "$*" "sdk/$*_defconfig" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
+	./scripts/buildroot-sdk.sh "$*" "sdk/$*_defconfig" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
 		"$(SDK_BUILD_DIR)" "$(SDK_CACHE_DIR)" "$(SDK_LOCK)" "$(BUILDROOT_DL_DIR)" "$(SOURCE_DATE_EPOCH)"
 
-$(BUILDROOT_PATCH_STAMP): $(BUILDROOT_TARBALL) $(BUILDROOT_PATCH)
-	./scripts/setup-buildroot.sh "$(BUILDROOT_PATCH_LOCK)" "$(BUILDROOT_TARBALL)" "$(BUILDROOT_HASH)" \
-		"$(BOARD_DIR)" "$(BUILDROOT_SRC_DIR)" "$@" "$(BUILDROOT_PATCH)"
+configure: $(BUILDROOT_TARBALL) $(SDK_INSTALL_STAMP) ## Force <BOARD> configuration
+	./scripts/buildroot-board.sh configure
 
-configure: $(SDK_INSTALL_STAMP) $(BUILDROOT_PATCH_STAMP) ## Run <BOARD>_defconfig
-	$(call buildroot,$(BOARD)_defconfig)
+savedefconfig: $(BUILDROOT_TARBALL) $(SDK_INSTALL_STAMP) ## Save minimal <BOARD> defconfig
+	./scripts/buildroot-board.sh savedefconfig
 
-build: configure ## Build <BOARD>
-	$(call buildroot,BR2_CCACHE=y)
+linux-update-defconfig: $(BUILDROOT_TARBALL) $(SDK_INSTALL_STAMP) ## Save minimal <BOARD> kernel defconfig
+	./scripts/buildroot-board.sh linux-update-defconfig
+
+build: $(BUILDROOT_TARBALL) $(SDK_INSTALL_STAMP) ## Incrementally build <BOARD> (FORCE=1 to run again)
+	./scripts/buildroot-board.sh build
 
 ssh: ## Open an SSH session to <BOARD>
 	$(call require_artifact,$(BOARD_DIR)/images/ssh_config)
@@ -147,5 +144,5 @@ clean: ## Remove build artifacts
 clean-sdk: ## Remove cached SDK toolchains
 	rm -rf "$(SDK_DIR)"
 
-lint: ## Run shellcheck
+lint: ## Run linters
 	./scripts/lint.sh

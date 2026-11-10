@@ -23,7 +23,7 @@ exec 9>"$sdk_lock"
 flock 9
 
 install_stamp="${sdk_install_root}/.stamp/${arch}/install"
-if [[ -e "$install_stamp" ]]; then
+if [[ -e "$install_stamp" && -d "${sdk_install_root}/${arch}/${arch}-tpmdd-linux-gnu_sdk-buildroot" ]]; then
   exit 0
 fi
 
@@ -31,7 +31,7 @@ echo "$hash  $tarball" | sha256sum --status -c -
 
 src_dir="${sdk_build_dir}/src/buildroot"
 unpack_stamp="${sdk_build_dir}/.stamp/unpack"
-if [[ ! -e "$unpack_stamp" ]]; then
+if [[ ! -e "$unpack_stamp" || ! -f "$src_dir/Makefile" ]]; then
   rm -rf "$src_dir"
   mkdir -p "$src_dir"
   tar -xf "$tarball" --strip-components=1 -C "$src_dir"

@@ -1,2 +1,4 @@
 /build
 LICENSE
+__pycache__/
+*.pyc
