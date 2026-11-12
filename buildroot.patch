@@ -162,17 +162,14 @@ diff --git a/package/libostree/Config.in b/package/libostree/Config.in
 index 49eed65..d0bec81 100644
 --- a/package/libostree/Config.in
 +++ b/package/libostree/Config.in
-@@ -1,27 +1,33 @@
+@@ -1,27 +1,32 @@
  config BR2_PACKAGE_LIBOSTREE
  	bool "libostree"
 +	depends on BR2_INIT_SYSTEMD
  	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgpgme, libgpg-error
--	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
--	depends on BR2_USE_WCHAR # libglib2
--	depends on BR2_USE_MMU # e2fsprogs, libglib2, libgpgme
-+	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2, libsoup3
-+	depends on BR2_USE_WCHAR # libglib2, libsoup3
-+	depends on BR2_USE_MMU # e2fsprogs, libglib2, libgpgme, libsoup3
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
+ 	depends on BR2_USE_WCHAR # libglib2
+ 	depends on BR2_USE_MMU # e2fsprogs, libglib2, libgpgme
  	# doesn't build with musl due to lack of TEMP_FAILURE_RETRY()
  	depends on !BR2_TOOLCHAIN_USES_MUSL
  	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_8 # loop_config
@@ -183,7 +180,6 @@ index 49eed65..d0bec81 100644
  	select BR2_PACKAGE_LIBGLIB2
  	select BR2_PACKAGE_LIBGPG_ERROR
  	select BR2_PACKAGE_LIBGPGME
-+	select BR2_PACKAGE_LIBSOUP3
 +	select BR2_PACKAGE_SYSTEMD
 +	select BR2_PACKAGE_UTIL_LINUX
  	select BR2_PACKAGE_XZ
@@ -220,7 +216,7 @@ diff --git a/package/libostree/libostree.mk b/package/libostree/libostree.mk
 index a737dc0..6ff53cf 100644
 --- a/package/libostree/libostree.mk
 +++ b/package/libostree/libostree.mk
-@@ -4,24 +4,50 @@
+@@ -4,24 +4,49 @@
  #
  ################################################################################
 
@@ -241,7 +237,6 @@ index a737dc0..6ff53cf 100644
 +	libglib2 \
 +	libgpg-error \
 +	libgpgme \
-+	libsoup3 \
 +	systemd \
 +	util-linux \
 +	xz \
@@ -264,7 +259,7 @@ index a737dc0..6ff53cf 100644
 +	--with-libmount \
 +	--with-libsystemd \
 +	--disable-rofiles-fuse \
-+	--with-soup3 \
++	--without-soup3 \
 +	--without-dracut \
  	--disable-gtk-doc \
  	--disable-gtk-doc-html \
@@ -275,7 +270,7 @@ index a737dc0..6ff53cf 100644
 
  ifeq ($(BR2_PACKAGE_GOBJECT_INTROSPECTION),y)
  LIBOSTREE_DEPENDENCIES += gobject-introspection
-@@ -31,48 +57,6 @@ else
+@@ -31,48 +56,6 @@ else
  LIBOSTREE_CONF_OPTS += --disable-introspection
  endif
 
@@ -324,7 +319,7 @@ index a737dc0..6ff53cf 100644
  ifeq ($(BR2_PACKAGE_LIBSELINUX),y)
  LIBOSTREE_CONF_OPTS += --with-selinux
  LIBOSTREE_DEPENDENCIES += libselinux
-@@ -80,13 +64,5 @@ else
+@@ -80,13 +63,5 @@ else
  LIBOSTREE_CONF_OPTS += --without-selinux
  endif
 
