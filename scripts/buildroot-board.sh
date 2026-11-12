@@ -172,6 +172,7 @@ configuration_key=$("${state[@]}" key --path "${BOARD_DIR}/.config")
 outputs=(
   --metadata-path "${BOARD_DIR}/images/${BOARD}.${TPMDD_MEDIA_EXT}"
   --metadata-path "${BOARD_DIR}/images/rootfs.squashfs"
+  --metadata-path "${BOARD_DIR}/images/rootfs-oci-latest-${TPMDD_ARCH}-linux.oci-image.tar"
   --metadata-path "${BOARD_DIR}/images/image.tar"
   --path "${BOARD_DIR}/images/image.manifest"
   --path "${BOARD_DIR}/images/image-${TPMDD_VERSION}.tar"
@@ -179,7 +180,17 @@ outputs=(
   --path "${BOARD_DIR}/images/ssh_config"
 )
 if [[ "${TPMDD_ARCH}" == amd64 ]]; then
-  outputs+=(--metadata-path "${BOARD_DIR}/images/rootfs-live.squashfs")
+  outputs+=(
+    --metadata-path "${BOARD_DIR}/images/rootfs-live.squashfs"
+    --path "${BOARD_DIR}/images/live-ssh/id-rsa"
+    --path "${BOARD_DIR}/images/live-ssh/id-rsa.pub"
+  )
+else
+  outputs+=(
+    --path "${TARGET_DIR}/var/roothome/.ssh/id-rsa"
+    --path "${TARGET_DIR}/var/roothome/.ssh/id-rsa.pub"
+    --path "${TARGET_DIR}/var/roothome/.ssh/authorized_keys"
+  )
 fi
 
 if [[ "${FORCE:-0}" == 0 && "${has_override_env}" == false && ! -e "${BOARD_DIR}/local.mk" && \
