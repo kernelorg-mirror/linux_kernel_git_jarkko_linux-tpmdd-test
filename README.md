@@ -27,7 +27,7 @@ Artifacts under `build/<BOARD>/images/`:
 ### OCI container
 
 ```sh
-CONTAINER=docker ./scripts/build.sh
+CONTAINER=docker ./scripts/container-build.sh
 ```
 
 Builds every board defconfig; Buildroot downloads/ccache stay in `tpmdd-cache`.
