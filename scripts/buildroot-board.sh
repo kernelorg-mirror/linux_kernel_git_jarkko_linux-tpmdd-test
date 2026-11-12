@@ -225,6 +225,11 @@ rm -f "${state_dir}/build.json"
 
 make "${make_args[@]}"
 
+export BINARIES_DIR="${BOARD_DIR}/images" HOST_DIR="${BOARD_DIR}/host"
+./scripts/image-manifest.sh
+./scripts/image-live-rootfs.sh
+./scripts/image-live-media.sh
+
 current_input_key=$("${state[@]}" "${input_args[@]}")
 current_configuration_key=$("${state[@]}" key --path "${BOARD_DIR}/.config")
 if [[ "${input_key}" != "${current_input_key}" || "${configuration_key}" != "${current_configuration_key}" ]]; then

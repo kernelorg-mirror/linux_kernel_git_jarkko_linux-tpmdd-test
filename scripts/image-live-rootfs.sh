@@ -55,7 +55,7 @@ fi
 export SOURCE_DATE_EPOCH TZ=UTC
 export PATH="${HOST_DIR}/bin:${HOST_DIR}/sbin:${PATH}"
 
-cd -- "${BR2_EXTERNAL_TPMDD_PATH}"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 . scripts/image-lib.sh
 
 live_ssh="${BINARIES_DIR}/live-ssh"
@@ -64,7 +64,7 @@ if [[ ! -f "${live_ssh}/id-rsa" ]]; then
   ssh-keygen -C 'root@linux-tpmdd' -t rsa -f "${live_ssh}/id-rsa" -N ''
 fi
 
-state_helper="${BR2_EXTERNAL_TPMDD_PATH}/scripts/state.py"
+state_helper="${PWD}/scripts/state.py"
 state="${BINARIES_DIR}/.image-live-rootfs.state"
 rootfs="${BINARIES_DIR}/rootfs.squashfs"
 oci_source="${BINARIES_DIR}/image.tar"
@@ -78,8 +78,8 @@ inputs=(
   --value "oci_digest=${oci_digest}"
 )
 for path in \
-  "${BR2_EXTERNAL_TPMDD_PATH}/scripts/image-live-rootfs.sh" \
-  "${BR2_EXTERNAL_TPMDD_PATH}/scripts/image-lib.sh" \
+  "${PWD}/scripts/image-live-rootfs.sh" \
+  "${PWD}/scripts/image-lib.sh" \
   "${state_helper}" \
   "${rootfs}" \
   "${installer_config}" \
@@ -118,7 +118,7 @@ trap '
 ' EXIT
 trap 'exit 1' HUP INT TERM
 
-"${HOST_DIR}/bin/fakeroot" -- "${BR2_EXTERNAL_TPMDD_PATH}/scripts/image-live-rootfs.sh" --pack \
+"${HOST_DIR}/bin/fakeroot" -- "${PWD}/scripts/image-live-rootfs.sh" --pack \
   "${rootfs}" "${work}/root" "${work}/rootfs.squashfs" "${oci_digest}" \
   "${installer_config}" "${live_ssh}" "${SOURCE_DATE_EPOCH}"
 

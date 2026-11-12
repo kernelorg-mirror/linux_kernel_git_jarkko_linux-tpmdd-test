@@ -6,16 +6,15 @@ set -euo pipefail
 
 : "${BINARIES_DIR:?BINARIES_DIR must be set by Buildroot}"
 : "${HOST_DIR:?HOST_DIR must be set by Buildroot}"
-: "${BR2_EXTERNAL_TPMDD_PATH:?BR2_EXTERNAL_TPMDD_PATH must be set by Buildroot}"
 : "${TPMDD_ARCH:?TPMDD_ARCH must be set (amd64 or arm64)}"
 : "${SOURCE_DATE_EPOCH:?SOURCE_DATE_EPOCH must be set by Buildroot}"
 export SOURCE_DATE_EPOCH TZ=UTC
 export PATH="${HOST_DIR}/bin:${HOST_DIR}/sbin:${PATH}"
 
-cd -- "${BR2_EXTERNAL_TPMDD_PATH}"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 . scripts/image-lib.sh
 
-state_helper="${BR2_EXTERNAL_TPMDD_PATH}/scripts/state.py"
+state_helper="${PWD}/scripts/state.py"
 state="${BINARIES_DIR}/.image-manifest.state"
 oci_source="${BINARIES_DIR}/rootfs-oci-latest-${TPMDD_ARCH}-linux.oci-image.tar"
 image_ref=latest
@@ -29,8 +28,8 @@ inputs=(
   --value "target_imgref=${target_imgref}"
 )
 for path in \
-  "${BR2_EXTERNAL_TPMDD_PATH}/scripts/image-manifest.sh" \
-  "${BR2_EXTERNAL_TPMDD_PATH}/scripts/image-lib.sh" \
+  "${PWD}/scripts/image-manifest.sh" \
+  "${PWD}/scripts/image-lib.sh" \
   "${state_helper}" \
   "${oci_source}"; do
   resolved=$(realpath -e "${path}")
