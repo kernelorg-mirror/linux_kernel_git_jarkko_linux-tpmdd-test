@@ -67,57 +67,14 @@ if [[ ! -f "${live_ssh}/id-rsa" ]]; then
 fi
 
 state_helper="${PWD}/scripts/state.py"
-state="${BINARIES_DIR}/.image-live-rootfs.state"
 rootfs="${BINARIES_DIR}/rootfs.squashfs"
 oci_source="${BINARIES_DIR}/image.tar"
 output="${BINARIES_DIR}/rootfs-live.squashfs"
 installer_config="${BR2_EXTERNAL_TPMDD_PATH}/board/tpmdd/installer.yaml"
 oci_digest=$(python3 "${state_helper}" oci-digest "${oci_source}")
 
-inputs=(
-  --value "arch=${TPMDD_ARCH}"
-  --value "epoch=${SOURCE_DATE_EPOCH}"
-  --value "oci_digest=${oci_digest}"
-)
-for path in \
-  "${PWD}/scripts/image-live-rootfs.sh" \
-  "${PWD}/scripts/image-lib.sh" \
-  "${state_helper}" \
-  "${rootfs}" \
-  "${installer_config}" \
-  "${live_ssh}/id-rsa" \
-  "${live_ssh}/id-rsa.pub" \
-  "${HOST_DIR}/bin/fakeroot" \
-  "${HOST_DIR}/bin/faked" \
-  "${HOST_DIR}/bin/unsquashfs" \
-  "${HOST_DIR}/bin/mksquashfs"; do
-  resolved=$(realpath -e "${path}")
-  inputs+=(--path "${path}")
-  [[ "${path}" == "${resolved}" ]] || inputs+=(--path "${resolved}")
-done
-
-key=$(python3 "${state_helper}" key "${inputs[@]}")
-if python3 "${state_helper}" check "${state}" --key "${key}" --metadata-path "${output}"; then
-  echo "live rootfs is up to date"
-  exit 0
-else
-  status=$?
-  [[ "${status}" == 1 ]] || exit "${status}"
-fi
-
 work=$(mktemp -d "${BINARIES_DIR}/rootfs-live.XXXXXX")
-published=0
-committed=0
-trap '
-  if [[ "${published}" == 1 && "${committed}" == 0 ]]; then
-    if [[ -e "${work}/previous" || -L "${work}/previous" ]]; then
-      mv -fT "${work}/previous" "${output}"
-    else
-      rm -f "${output}"
-    fi
-  fi
-  rm -rf -- "${work}"
-' EXIT
+trap 'rm -rf -- "${work}"' EXIT
 trap 'exit 1' HUP INT TERM
 
 "${HOST_DIR}/bin/fakeroot" -- "${PWD}/scripts/image-live-rootfs.sh" --pack \
@@ -125,10 +82,4 @@ trap 'exit 1' HUP INT TERM
   "${installer_config}" "${live_ssh}" "${SOURCE_DATE_EPOCH}"
 
 test -s "${work}/rootfs.squashfs"
-if [[ -e "${output}" || -L "${output}" ]]; then
-  ln -P "${output}" "${work}/previous"
-fi
-published=1
 mv -fT "${work}/rootfs.squashfs" "${output}"
-python3 "${state_helper}" save "${state}" --key "${key}" --metadata-path "${output}"
-committed=1

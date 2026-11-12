@@ -15,62 +15,15 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 . scripts/image-lib.sh
 
 state_helper="${PWD}/scripts/state.py"
-state="${BINARIES_DIR}/.image-manifest.state"
 oci_source="${BINARIES_DIR}/rootfs-oci-latest-${TPMDD_ARCH}-linux.oci-image.tar"
 image_ref=latest
 tpmdd_version="${TPMDD_VERSION:-0}"
 target_imgref="${TPMDD_TARGET_IMGREF:-localhost/tpmdd:latest}"
 
-inputs=(
-  --value "arch=${TPMDD_ARCH}"
-  --value "epoch=${SOURCE_DATE_EPOCH}"
-  --value "version=${tpmdd_version}"
-  --value "target_imgref=${target_imgref}"
-)
-for path in \
-  "${PWD}/scripts/image-manifest.sh" \
-  "${PWD}/scripts/image-lib.sh" \
-  "${state_helper}" \
-  "${oci_source}"; do
-  resolved=$(realpath -e "${path}")
-  inputs+=(--path "${path}")
-  [[ "${path}" == "${resolved}" ]] || inputs+=(--path "${resolved}")
-done
-
-key=$(python3 "${state_helper}" key "${inputs[@]}")
-outputs=(
-  --metadata-path "${BINARIES_DIR}/image.tar"
-  --path "${BINARIES_DIR}/image.manifest"
-  --path "${BINARIES_DIR}/image-${tpmdd_version}.tar"
-  --path "${BINARIES_DIR}/image-${tpmdd_version}.manifest"
-)
-if python3 "${state_helper}" check "${state}" --key "${key}" "${outputs[@]}"; then
-  echo "image manifest is up to date"
-  exit 0
-else
-  status=$?
-  [[ "${status}" == 1 ]] || exit "${status}"
-fi
-
 work=$(mktemp -d "${BINARIES_DIR}/image-manifest.XXXXXX")
-updated=()
-record=
-committed=0
-trap '
-  if [[ "${committed}" == 0 ]]; then
-    for record in "${updated[@]}"; do
-      existed="${record%%:*}"
-      name="${record#*:}"
-      rm -rf -- "${BINARIES_DIR:?}/${name:?}"
-      if [[ "${existed}" == 1 ]]; then
-        mv -T "${work}/old/${name}" "${BINARIES_DIR}/${name}"
-      fi
-    done
-  fi
-  rm -rf -- "${work}"
-' EXIT
+trap 'rm -rf -- "${work}"' EXIT
 trap 'exit 1' HUP INT TERM
-mkdir -p "${work}/new" "${work}/old"
+mkdir -p "${work}/new"
 
 cp --reflink=auto "${oci_source}" "${work}/new/image.tar"
 oci_digest=$(python3 "${state_helper}" oci-digest "${work}/new/image.tar")
@@ -88,14 +41,5 @@ for name in \
   image.manifest \
   "image-${tpmdd_version}.tar" \
   "image-${tpmdd_version}.manifest"; do
-  existed=0
-  if [[ -e "${BINARIES_DIR}/${name}" || -L "${BINARIES_DIR}/${name}" ]]; then
-    existed=1
-    ln -P "${BINARIES_DIR}/${name}" "${work}/old/${name}"
-  fi
-  updated+=("${existed}:${name}")
   mv -fT "${work}/new/${name}" "${BINARIES_DIR}/${name}"
 done
-
-python3 "${state_helper}" save "${state}" --key "${key}" "${outputs[@]}"
-committed=1
