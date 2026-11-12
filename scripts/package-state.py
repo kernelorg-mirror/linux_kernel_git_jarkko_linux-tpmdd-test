@@ -1057,17 +1057,6 @@ class PackageInvalidator:
         journal_path.unlink(missing_ok=True)
         BuildState.sync_directory(directory)
 
-    @classmethod
-    def build_dir(cls, board: Path, package_name: str) -> str:
-        directory, _, _ = cls.state_paths(board)
-        snapshot = cls.read_json(directory / "packages.next.json")
-        cls.validate_snapshot(snapshot)
-        package = snapshot["packages"].get(package_name)
-        if package is None or not package["build_dirs"]:
-            return ""
-        return str(cls.board_path(board, package["build_dirs"][0]))
-
-
 class PackageStateCli:
     @staticmethod
     def run(argv: Sequence[str] | None = None) -> int:
@@ -1090,10 +1079,6 @@ class PackageStateCli:
         assemble_parser = subparsers.add_parser("assemble")
         assemble_parser.add_argument("--board", required=True, type=Path)
 
-        dir_parser = subparsers.add_parser("build-dir")
-        dir_parser.add_argument("--board", required=True, type=Path)
-        dir_parser.add_argument("package")
-
         args = parser.parse_args(raw_argv)
         board = args.board.resolve()
         if not board.is_dir() or not (board / ".config").is_file():
@@ -1101,8 +1086,6 @@ class PackageStateCli:
         try:
             if args.command == "assemble":
                 PackageInvalidator.assemble(board)
-            elif args.command == "build-dir":
-                print(PackageInvalidator.build_dir(board, args.package))
             else:
                 make_args = (
                     args.make_args[1:]
