@@ -16,8 +16,6 @@ export PATH="${HOST_DIR}/bin:${HOST_DIR}/sbin:${PATH}"
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 . scripts/image-lib.sh
 
-state_helper="${PWD}/scripts/state.py"
-state="${BINARIES_DIR}/.image-live-media.state"
 board_dir="${BR2_EXTERNAL_TPMDD_PATH}/board/tpmdd"
 stub="${TARGET_DIR}/usr/lib/systemd/boot/efi/${TPMDD_EFI_STUB_NAME}"
 kernel="${BINARIES_DIR}/${TPMDD_KERNEL_IMAGE}"
@@ -31,94 +29,19 @@ output_media="tpmdd_${TPMDD_ARCH}.${TPMDD_MEDIA_EXT}"
 rootfs_live="${BINARIES_DIR}/rootfs-live.squashfs"
 ssh_dir="${BINARIES_DIR}/live-ssh"
 
-image_inputs=(
-  "${PWD}/scripts/image-live-media.sh"
-  "${PWD}/scripts/image-lib.sh"
-  "${state_helper}"
-  "${stub}"
-  "${kernel}"
-  "${initrd}"
-  "${osrel}"
-  "${oci_archive}"
-  "${manifest}"
-  "${ssh_template}"
-  "${rootfs_live}"
-  "${ssh_dir}/id-rsa"
-)
-
 if [[ "${TPMDD_ARCH}" == amd64 ]]; then
   genimage_cfg="${board_dir}/genimage.cfg"
   media_cmdline="root=live:CDLABEL=TPMDD ${live_cmdline}${TPMDD_CMDLINE_EXTRA} console=tty0"
-  image_inputs+=(
-    "${genimage_cfg}"
-    "${HOST_DIR}/bin/ukify"
-    "${HOST_DIR}/bin/genimage"
-    "${HOST_DIR}/bin/xorriso"
-  )
 else
   genimage_cfg="${board_dir}/genimage-arm64.cfg"
   rpi_dts="${board_dir}/rpi/tpm-slb9670-overlay.dts"
   media_cmdline="root=live:LABEL=TPMDD ${live_cmdline}${TPMDD_CMDLINE_EXTRA} console=tty0"
-  image_inputs+=(
-    "${BINARIES_DIR}/rpi-firmware"
-    "${BINARIES_DIR}/RPI3_EFI.fd"
-    "${BINARIES_DIR}/RPI4_EFI.fd"
-    "${rpi_dts}"
-    "${genimage_cfg}"
-    "${HOST_DIR}/bin/ukify"
-    "${HOST_DIR}/bin/dtc"
-    "${HOST_DIR}/sbin/mkfs.vfat"
-    "${HOST_DIR}/bin/mcopy"
-    "${HOST_DIR}/bin/genimage"
-  )
-fi
-
-inputs=(
-  --value "arch=${TPMDD_ARCH}"
-  --value "epoch=${SOURCE_DATE_EPOCH}"
-  --value "kernel_version=${TPMDD_KERNEL_VERSION}"
-  --value "cmdline=${media_cmdline}"
-  --value "ssh_identity=${ssh_dir}/id-rsa"
-)
-for path in "${image_inputs[@]}"; do
-  resolved=$(realpath -e "${path}")
-  inputs+=(--path "${path}")
-  [[ "${path}" == "${resolved}" ]] || inputs+=(--path "${resolved}")
-done
-
-key=$(python3 "${state_helper}" key "${inputs[@]}")
-outputs=(
-  --metadata-path "${BINARIES_DIR}/${output_media}"
-  --path "${BINARIES_DIR}/ssh_config"
-)
-if python3 "${state_helper}" check "${state}" --key "${key}" "${outputs[@]}"; then
-  echo "live media is up to date"
-  exit 0
-else
-  status=$?
-  [[ "${status}" == 1 ]] || exit "${status}"
 fi
 
 work=$(mktemp -d "${BINARIES_DIR}/media.XXXXXX")
-updated=()
-record=
-committed=0
-trap '
-  if [[ "${committed}" == 0 ]]; then
-    for record in "${updated[@]}"; do
-      existed="${record%%:*}"
-      name="${record#*:}"
-      if [[ "${existed}" == 1 ]]; then
-        mv -fT "${work}/old/${name}" "${BINARIES_DIR}/${name}"
-      else
-        rm -f "${BINARIES_DIR}/${name}"
-      fi
-    done
-  fi
-  rm -rf -- "${work}"
-' EXIT
+trap 'rm -rf -- "${work}"' EXIT
 trap 'exit 1' HUP INT TERM
-mkdir -p "${work}/old" "${work}/empty" "${work}/out"
+mkdir -p "${work}/empty" "${work}/out"
 
 if [[ "${TPMDD_ARCH}" == amd64 ]]; then
   efi_part="${work}/input/efi-part"
@@ -225,14 +148,5 @@ sed -e "s|@IDENTITY_FILE@|${ssh_dir}/id-rsa|g" \
   > "${work}/out/ssh_config"
 
 for name in "${output_media}" ssh_config; do
-  existed=0
-  if [[ -e "${BINARIES_DIR}/${name}" || -L "${BINARIES_DIR}/${name}" ]]; then
-    existed=1
-    ln -P "${BINARIES_DIR}/${name}" "${work}/old/${name}"
-  fi
-  updated+=("${existed}:${name}")
   mv -fT "${work}/out/${name}" "${BINARIES_DIR}/${name}"
 done
-
-python3 "${state_helper}" save "${state}" --key "${key}" "${outputs[@]}"
-committed=1
