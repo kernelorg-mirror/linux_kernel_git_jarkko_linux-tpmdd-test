@@ -132,7 +132,6 @@ fi
 [[ "${command}" == build ]] || exit 0
 
 export TARGET_DIR="${BOARD_DIR}/target" BR2_EXTERNAL_TPMDD_PATH="${PWD}"
-. scripts/image-lib.sh
 
 input_args=(
   key
@@ -168,6 +167,7 @@ done < <(compgen -e | LC_ALL=C sort | grep -E '^(TPMDD_|BR2_|[A-Za-z0-9_]+_OVERR
 
 input_key=$("${state[@]}" "${input_args[@]}")
 configuration_key=$("${state[@]}" key --path "${BOARD_DIR}/.config")
+. scripts/image-lib.sh
 
 outputs=(
   --metadata-path "${BOARD_DIR}/images/${BOARD}.${TPMDD_MEDIA_EXT}"
