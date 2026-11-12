@@ -18,9 +18,13 @@ test -n "${kver}"
 case "${TPMDD_ARCH}" in
   amd64)
     kernel="${TARGET_DIR}/boot/bzImage"
+    target_arch=x86_64
+    ldso_name=ld-linux-x86-64.so.2
     ;;
   arm64)
     kernel="${TARGET_DIR}/boot/Image"
+    target_arch=aarch64
+    ldso_name=ld-linux-aarch64.so.1
     ;;
   *)
     echo "unknown TPMDD_ARCH: ${TPMDD_ARCH}" >&2
@@ -132,4 +136,16 @@ if [ "${TPMDD_ARCH}" = arm64 ]; then
     cp -f "${SSH_DIR}"/{id-rsa.pub,authorized_keys}
     chmod 600 "${SSH_DIR}/authorized_keys"
   fi
+fi
+
+bootc_bin="${TARGET_DIR}/usr/bin/bootc"
+bootc_ldso="${TARGET_DIR}/lib/${ldso_name}"
+bootc_libpath="${TARGET_DIR}/lib:${TARGET_DIR}/usr/lib"
+if [[ ! -x "${bootc_bin}" ]]; then
+  echo "warning: skipping bootc container lint: ${bootc_bin} missing" >&2
+elif [[ "$(uname -m)" == "${target_arch}" && -x "${bootc_ldso}" ]]; then
+  "${bootc_ldso}" --library-path "${bootc_libpath}" "${bootc_bin}" \
+    container lint --rootfs "${TARGET_DIR}" --skip baseimage-root --skip baseimage-composefs
+else
+  echo "warning: skipping bootc container lint: cannot run target bootc on host" >&2
 fi

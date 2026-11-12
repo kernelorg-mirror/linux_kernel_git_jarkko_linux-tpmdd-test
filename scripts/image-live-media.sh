@@ -13,10 +13,10 @@ set -euo pipefail
 export SOURCE_DATE_EPOCH TZ=UTC
 export PATH="${HOST_DIR}/bin:${HOST_DIR}/sbin:${PATH}"
 
-cd -- "${BR2_EXTERNAL_TPMDD_PATH}"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 . scripts/image-lib.sh
 
-state_helper="${BR2_EXTERNAL_TPMDD_PATH}/scripts/state.py"
+state_helper="${PWD}/scripts/state.py"
 state="${BINARIES_DIR}/.image-live-media.state"
 board_dir="${BR2_EXTERNAL_TPMDD_PATH}/board/tpmdd"
 stub="${TARGET_DIR}/usr/lib/systemd/boot/efi/${TPMDD_EFI_STUB_NAME}"
@@ -30,8 +30,8 @@ live_cmdline="ro rd.overlay systemd.gpt_auto=0 net.ifnames=0 nokaslr tpm_tis.int
 output_media="tpmdd_${TPMDD_ARCH}.${TPMDD_MEDIA_EXT}"
 
 image_inputs=(
-  "${BR2_EXTERNAL_TPMDD_PATH}/scripts/image-live-media.sh"
-  "${BR2_EXTERNAL_TPMDD_PATH}/scripts/image-lib.sh"
+  "${PWD}/scripts/image-live-media.sh"
+  "${PWD}/scripts/image-lib.sh"
   "${state_helper}"
   "${stub}"
   "${kernel}"
