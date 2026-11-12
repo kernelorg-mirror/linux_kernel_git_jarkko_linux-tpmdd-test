@@ -223,43 +223,6 @@ fi
 rm -f "${state_dir}/build.json"
 "${packages[@]}" assemble --board "${BOARD_DIR}"
 
-linux_dir=$("${packages[@]}" build-dir --board "${BOARD_DIR}" linux)
-linux_defconfig="linux/${BOARD}_defconfig"
-linux_changed=false
-linux_built=
-kernel_key=$("${state[@]}" key --path "${linux_defconfig}")
-if [[ -f "${state_dir}/linux.key" ]]; then
-  IFS= read -r previous_kernel < "${state_dir}/linux.key"
-  [[ "${kernel_key}" == "${previous_kernel}" ]] || linux_changed=true
-elif [[ -n "${linux_dir}" && -f "${linux_dir}/.stamp_configured" && \
-    "${linux_defconfig}" -nt "${linux_dir}/.stamp_configured" ]]; then
-  linux_changed=true
-fi
-if [[ -n "${linux_dir}" ]]; then
-  if [[ "${linux_changed}" == true || ! -d "${linux_dir}" || ! -f "${linux_dir}/.stamp_configured" || \
-      ! -d "${BOARD_DIR}/per-package/linux" ]]; then
-    linux_changed=true
-    if [[ -d "${linux_dir}" || -d "${BOARD_DIR}/per-package/linux" ]]; then
-      make "${make_args[@]}" linux-dirclean
-    fi
-  elif [[ ! -f "${linux_dir}/.stamp_built" ]]; then
-    linux_changed=true
-  else
-    linux_built="${linux_dir}/.stamp_built"
-  fi
-fi
-
-for package in linux-tools keygcbench; do
-  package_dir=$("${packages[@]}" build-dir --board "${BOARD_DIR}" "${package}")
-  [[ -n "${package_dir}" ]] || continue
-  package_cache="${BOARD_DIR}/per-package/${package}"
-  if [[ ( -d "${package_dir}" || -d "${package_cache}" ) && \
-      ( "${linux_changed}" == true || ! -d "${package_cache}" || ! -f "${package_dir}/.stamp_configured" || \
-        ( -n "${linux_built}" && "${linux_built}" -nt "${package_dir}/.stamp_configured" ) ) ]]; then
-    make "${make_args[@]}" "${package}-dirclean"
-  fi
-done
-
 make "${make_args[@]}"
 
 current_input_key=$("${state[@]}" "${input_args[@]}")
@@ -278,6 +241,4 @@ build_key=$("${state[@]}" key \
   --path "${BOARD_DIR}/.config" \
   --path "${state_dir}/packages.json")
 "${state[@]}" save "${state_dir}/configure.json" --key "${configure_key}" --path "${BOARD_DIR}/.config"
-printf '%s\n' "${kernel_key}" > "${state_dir}/linux.key.tmp"
-mv "${state_dir}/linux.key.tmp" "${state_dir}/linux.key"
 "${state[@]}" save "${state_dir}/build.json" --key "${build_key}" "${outputs[@]}"
