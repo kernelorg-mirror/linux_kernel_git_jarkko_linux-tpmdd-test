@@ -56,7 +56,7 @@ mkdir -p "${state_dir}"
 
 make_args=(
   -j"${BUILDROOT_JOBS}" -C "${BUILDROOT_SRC_DIR}"
-  O="${BOARD_DIR}" BR2_EXTERNAL="${PWD}" BR2_CCACHE_DIR="${CCACHE_DIR}"
+  O="${BOARD_DIR}" BR2_EXTERNAL="${PWD}/br2-external" BR2_CCACHE_DIR="${CCACHE_DIR}"
   BR2_DL_DIR="${BUILDROOT_DL_DIR}" SDK_INSTALL_DIR="${SDK_INSTALL_DIR}"
   TPMDD_VERSION="${TPMDD_VERSION}" SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"
   BR2_CCACHE=y
@@ -64,9 +64,9 @@ make_args=(
 
 configure_args=(
   key
-  --path "configs/${BOARD}_defconfig"
-  --path Config.in
-  --path external.desc
+  --path "br2-external/configs/${BOARD}_defconfig"
+  --path br2-external/Config.in
+  --path br2-external/external.desc
   --path "${BUILDROOT_PATCH_STAMP}"
   --path "${SDK_INSTALL_STAMP}"
   --path scripts/buildroot-board.sh
@@ -77,13 +77,13 @@ configure_args=(
 )
 while IFS= read -r -d '' path; do
   configure_args+=(--path "${path}")
-done < <(find package -name Config.in \( -type f -o -type l \) -print0 | sort -z)
+done < <(find br2-external/package -name Config.in \( -type f -o -type l \) -print0 | sort -z)
 
 if [[ "${command}" == savedefconfig ]]; then
   if [[ ! -f "${BOARD_DIR}/.config" ]]; then
     make "${make_args[@]}" "${BOARD}_defconfig"
   fi
-  make "${make_args[@]}" BR2_DEFCONFIG="${PWD}/configs/${BOARD}_defconfig" savedefconfig
+  make "${make_args[@]}" BR2_DEFCONFIG="${PWD}/br2-external/configs/${BOARD}_defconfig" savedefconfig
   configure_key=$("${state[@]}" "${configure_args[@]}")
   "${state[@]}" save "${state_dir}/configure.json" --key "${configure_key}" --path "${BOARD_DIR}/.config"
   exit 0
@@ -99,7 +99,7 @@ if [[ "${command}" == configure ]] || ! "${state[@]}" check "${state_dir}/config
 fi
 
 if [[ "${command}" == linux-update-defconfig ]]; then
-  linux_defconfig="linux/${BOARD}_defconfig"
+  linux_defconfig="br2-external/linux/${BOARD}_defconfig"
   linux_dir=
   for candidate in "${BOARD_DIR}/build"/linux-*; do
     [[ -d "${candidate}" ]] || continue
@@ -131,24 +131,16 @@ fi
 
 [[ "${command}" == build ]] || exit 0
 
-export TARGET_DIR="${BOARD_DIR}/target" BR2_EXTERNAL_TPMDD_PATH="${PWD}"
+export TARGET_DIR="${BOARD_DIR}/target" BR2_EXTERNAL_TPMDD_PATH="${PWD}/br2-external"
 
 input_args=(
   key
   --exclude __pycache__
   --exclude '*.pyc'
   --path Makefile
-  --path Config.in
-  --path external.mk
-  --path external.desc
-  --path configs
+  --path br2-external
   --path sdk
-  --path linux
-  --path board
   --path scripts
-  --path package
-  --path patches
-  --path overlay
   --path buildroot.patch
   --value "source=${BUILDROOT_SRC_DIR}"
   --value "sdk=${SDK_INSTALL_DIR}"

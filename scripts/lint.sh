@@ -7,10 +7,12 @@ set -euo pipefail
 git ls-files -z --cached --others --exclude-standard | (
   sh_files=()
   py_files=()
+  br2_files=()
   shell_shebang_re='^#!([^[:space:]]*/)?(env([[:space:]]+-S)?[[:space:]]+)?(a|ba|da|k)?sh([[:space:]]|$)'
   python_shebang_re='^#!([^[:space:]]*/)?(env([[:space:]]+-S)?[[:space:]]+)?python3?([[:space:]]|$)'
   while IFS= read -r -d '' file; do
     [[ -f "$file" ]] || continue
+    [[ "$file" != br2-external/* ]] || br2_files+=("$file")
     mapfile -t -n 1 header < "$file"
     if [[ $file == *.sh || ${header[0]-} =~ $shell_shebang_re ]]; then
       sh_files+=("$file")
@@ -38,5 +40,15 @@ for path in sys.argv[1:]:
         status = 1
 sys.exit(status)
 ' "${py_files[@]}"
+  fi
+
+  if ((${#br2_files[@]} > 0)); then
+    if grep -InE '(\$[{(]?BR2_EXTERNAL_TPMDD_PATH[})]?/(\.\.|scripts|sdk|buildroot\.patch|Makefile)(/|["[:space:]]|$)|(\.\./)+(scripts|sdk|buildroot\.patch|Makefile)(/|["[:space:]]|$))' -- "${br2_files[@]}" >&2; then
+      echo "error: br2-external must not reference workspace orchestration" >&2
+      exit 1
+    else
+      status=$?
+      [[ "${status}" == 1 ]] || exit "${status}"
+    fi
   fi
 )
