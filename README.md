@@ -3,6 +3,16 @@
 bootc container host for linux-tpmdd kernel testing. Builds a live ISO/image
 and an OCI bootc image (`rootfs-oci-latest-<arch>-linux.oci-image.tar`).
 
+## Project layout
+
+- `br2-external/` — self-contained Buildroot definitions, board assets, packages,
+  patches, kernel configs, and rootfs overlays.
+- `sdk/` — SDK toolchain defconfigs.
+- `scripts/`, `Makefile`, `buildroot.patch` — workspace build orchestration.
+
+Buildroot prepares and validates the rootfs. Workspace scripts then produce the
+image manifest, live rootfs, and boot media, in that order.
+
 ## Building
 
 ### Host

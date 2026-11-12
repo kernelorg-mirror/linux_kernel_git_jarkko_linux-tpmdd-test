@@ -52,15 +52,15 @@ SDK_LOCK			:= $(CACHE_DIR)/.locks/sdk/$(SDK_STAMP_KEY)
 SDK_ROOT			= $(SDK_CACHE_DIR)/$(1)/$(1)-tpmdd-linux-gnu_sdk-buildroot
 SDK_BUILD_DIR			:= $(OUTPUT_DIR_ABS)/sdk/$(BUILDROOT_VERSION)/$(SDK_STAMP_KEY)
 SDK_ARCHS			:= $(patsubst sdk/%_defconfig,%,$(wildcard sdk/*_defconfig))
-BOARDS				:= $(patsubst configs/%_defconfig,%,$(wildcard configs/*_defconfig))
+BOARDS				:= $(patsubst br2-external/configs/%_defconfig,%,$(wildcard br2-external/configs/*_defconfig))
 ifdef BOARD
-ifeq ($(wildcard configs/$(BOARD)_defconfig),)
+ifeq ($(wildcard br2-external/configs/$(BOARD)_defconfig),)
 $(error unknown BOARD=$(BOARD); see `make list`)
 endif
-SDK_ARCH := $(strip $(if $(filter BR2_x86_64=y,$(file < configs/$(BOARD)_defconfig)),x86_64,\
-	$(if $(filter BR2_aarch64=y,$(file < configs/$(BOARD)_defconfig)),aarch64)))
+SDK_ARCH := $(strip $(if $(filter BR2_x86_64=y,$(file < br2-external/configs/$(BOARD)_defconfig)),x86_64,\
+	$(if $(filter BR2_aarch64=y,$(file < br2-external/configs/$(BOARD)_defconfig)),aarch64)))
 ifeq ($(SDK_ARCH),)
-$(error configs/$(BOARD)_defconfig must select BR2_x86_64 or BR2_aarch64)
+$(error br2-external/configs/$(BOARD)_defconfig must select BR2_x86_64 or BR2_aarch64)
 endif
 TPMDD_ARCH := $(if $(filter x86_64,$(SDK_ARCH)),amd64,arm64)
 else

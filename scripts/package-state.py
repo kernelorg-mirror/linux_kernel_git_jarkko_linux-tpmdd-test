@@ -355,10 +355,15 @@ class PackageCollector:
 
     @staticmethod
     def normalizer(
-        root: Path, board: Path, source: Path, download: Path | None = None
+        root: Path,
+        external: Path,
+        board: Path,
+        source: Path,
+        download: Path | None = None,
     ) -> Callable[[Any], Any]:
         items: list[tuple[Path, str]] = [
-            (root, "<external>"),
+            (root, "<workspace>"),
+            (external, "<external>"),
             (board, "<output>"),
             (source, "<buildroot>"),
         ]
@@ -400,7 +405,7 @@ class PackageCollector:
     @staticmethod
     def input_path(
         value: str,
-        root: Path,
+        external: Path,
         board: Path,
         source: Path,
         *,
@@ -416,7 +421,7 @@ class PackageCollector:
         if resolved.is_relative_to(board) and not resolved.is_relative_to(source):
             raise ValueError(f"configured data input points into build output: {path}")
         if not allow_external and not (
-            resolved.is_relative_to(root) or resolved.is_relative_to(source)
+            resolved.is_relative_to(external) or resolved.is_relative_to(source)
         ):
             raise ValueError(
                 f"unclassified package input outside external/Buildroot trees: {path}"
@@ -447,7 +452,7 @@ class PackageCollector:
 
     @staticmethod
     def make_arguments(
-        make_args: Sequence[str], root: Path, board: Path, source: Path
+        make_args: Sequence[str], external: Path, board: Path, source: Path
     ) -> tuple[list[str], dict[str, str]]:
         index = 0
         assignments: dict[str, str] = {}
@@ -473,7 +478,7 @@ class PackageCollector:
             else:
                 raise ValueError(f"unsupported metadata make argument: {arg!r}")
             index += 1
-        for name, expected in (("O", board), ("BR2_EXTERNAL", root)):
+        for name, expected in (("O", board), ("BR2_EXTERNAL", external)):
             if name in assignments and Path(assignments[name]).resolve() != expected:
                 raise ValueError(f"make {name} does not match collector input")
         overrides = {
@@ -488,19 +493,20 @@ class PackageCollector:
                 "TPMDD_VERSION",
             }
         }
-        return [*make_args, "-C", str(source), f"O={board}", f"BR2_EXTERNAL={root}"], overrides
+        return [*make_args, "-C", str(source), f"O={board}", f"BR2_EXTERNAL={external}"], overrides
 
     @classmethod
     def collect(
         cls, root: Path, board: Path, source: Path, make_args: Sequence[str]
     ) -> dict[str, Any]:
         root = root.resolve(strict=True)
+        external = (root / "br2-external").resolve(strict=True)
         board = board.resolve(strict=True)
         source = source.resolve(strict=True)
         config = cls.read_config(board / ".config")
         if config.get("BR2_PER_PACKAGE_DIRECTORIES") != "y":
             raise ValueError("safe invalidation requires BR2_PER_PACKAGE_DIRECTORIES=y")
-        arguments, overrides = cls.make_arguments(make_args, root, board, source)
+        arguments, overrides = cls.make_arguments(make_args, external, board, source)
         collector = Path(__file__).resolve().with_name("package-state.mk")
         with tempfile.TemporaryDirectory(prefix="tpmdd-package-state-") as temporary:
             result = subprocess.run(
@@ -539,7 +545,7 @@ class PackageCollector:
                 if globals_data.get("DL_DIR")
                 else None
             )
-            normalize = cls.normalizer(root, board, source, download)
+            normalize = cls.normalizer(root, external, board, source, download)
             raw_data = json.loads(
                 (Path(temporary) / "raw-definitions.json").read_text(encoding="utf-8")
             )
@@ -604,14 +610,14 @@ class PackageCollector:
             pkgdir = info.get("package_dir")
             if not isinstance(pkgdir, str) or not pkgdir:
                 raise ValueError(f"missing package_dir: {name}")
-            recipe = cls.input_path(pkgdir, root, board, source)
+            recipe = cls.input_path(pkgdir, external, board, source)
             if not recipe.is_dir():
                 raise ValueError(f"package_dir is not a directory: {recipe}")
             inputs = [content(recipe)]
             rawname = info.get("name")
             if not isinstance(rawname, str) or not _NAME_RE.fullmatch(rawname):
                 raise ValueError(f"invalid upstream raw package name: {name}")
-            patches = root / "patches" / rawname
+            patches = external / "patches" / rawname
             if patches.exists():
                 inputs.append(content(patches))
             for field in ("hashes", "patches"):
@@ -627,7 +633,7 @@ class PackageCollector:
                         content(
                             cls.input_path(
                                 value,
-                                root,
+                                external,
                                 board,
                                 source,
                                 board_relative=field == "patches",
@@ -637,14 +643,14 @@ class PackageCollector:
             expanded = data["expanded"]
             for field in _DATA_FIELDS:
                 for value in expanded.get(field, "").split():
-                    inputs.append(content(cls.input_path(value, root, board, source)))
+                    inputs.append(content(cls.input_path(value, external, board, source)))
             override_srcdir = expanded.get("OVERRIDE_SRCDIR", "")
             if override_srcdir:
                 inputs.append(
                     content(
                         cls.input_path(
                             override_srcdir,
-                            root,
+                            external,
                             board,
                             source,
                             allow_external=True,
@@ -653,7 +659,7 @@ class PackageCollector:
                 )
             elif expanded.get("SITE_METHOD") == "local" and expanded.get("SITE", ""):
                 inputs.append(
-                    content(cls.input_path(expanded["SITE"], root, board, source))
+                    content(cls.input_path(expanded["SITE"], external, board, source))
                 )
             helpers, opaque = MakeScanner.helper_inputs(
                 data, variables, globals_data, universe, suffix_cache
@@ -676,7 +682,7 @@ class PackageCollector:
                 )
             }
             if name == "linux":
-                inputs.append(content(root / "linux"))
+                inputs.append(content(external / "linux"))
                 package_config.update(
                     {
                         symbol: value
@@ -735,10 +741,8 @@ class PackageCollector:
             )
         ]
         common.extend(sorted((source / "package").glob("pkg-*.mk")))
-        common.extend(
-            root / name
-            for name in ("buildroot.patch", "sdk", "Config.in", "external.desc")
-        )
+        common.extend(root / name for name in ("buildroot.patch", "sdk"))
+        common.extend(external / name for name in ("Config.in", "external.desc"))
         infrastructure = normalize(
             {
                 "files": [content(path) for path in common],
@@ -759,7 +763,7 @@ class PackageCollector:
         return {
             "version": 1,
             "infrastructure": cls.digest(infrastructure),
-            "external_mk": (root / "external.mk").read_text(encoding="utf-8"),
+            "external_mk": (external / "external.mk").read_text(encoding="utf-8"),
             "packages": packages,
         }
 
