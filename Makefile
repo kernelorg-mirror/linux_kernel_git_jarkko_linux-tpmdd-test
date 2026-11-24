@@ -10,7 +10,7 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 
 # Versions
-TPMDD_VERSION			?= 2026.08
+TPMDD_VERSION			?= 2026.11
 SOURCE_DATE_EPOCH		?= 1735689600
 
 # Directories
@@ -24,8 +24,8 @@ STAMP_DIR			:= $(BOARD_DIR)/stamp
 
 # Buildroot
 BUILDROOT_JOBS			?= 8
-BUILDROOT_VERSION		?= 2026.08-rc1
-BUILDROOT_HASH			?= fbb78d7e07ca91cc4def0a0730a332e5bcf2234b59f3b0c151104e2dc79ff6fe
+BUILDROOT_VERSION		?= 2026.11-rc2
+BUILDROOT_HASH			?= bd0db098e09c476a6d11007f5d8485afbade40ce6d290ceb13c3c4874b577cb6
 BUILDROOT_URL			?= https://buildroot.org/downloads/buildroot-$(BUILDROOT_VERSION).tar.xz
 BUILDROOT_DL_DIR		:= $(DOWNLOAD_DIR)/buildroot
 BUILDROOT_TARBALL		:= $(BUILDROOT_DL_DIR)/source/$(BUILDROOT_HASH)/buildroot-$(BUILDROOT_VERSION).tar.xz
@@ -58,7 +58,7 @@ ifeq ($(wildcard br2-external/configs/$(BOARD)_defconfig),)
 $(error unknown BOARD=$(BOARD); see `make list`)
 endif
 SDK_ARCH := $(strip $(if $(filter BR2_x86_64=y,$(file < br2-external/configs/$(BOARD)_defconfig)),x86_64,\
-	$(if $(filter BR2_aarch64=y,$(file < br2-external/configs/$(BOARD)_defconfig)),aarch64)))
+	$(if $(filter BR2_aarch64=y BR2_TOOLCHAIN_EXTERNAL_CUSTOM_PREFIX="aarch64-tpmdd-linux-gnu",$(file < br2-external/configs/$(BOARD)_defconfig)),aarch64)))
 ifeq ($(SDK_ARCH),)
 $(error br2-external/configs/$(BOARD)_defconfig must select BR2_x86_64 or BR2_aarch64)
 endif

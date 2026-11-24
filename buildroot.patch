@@ -1,11 +1,11 @@
 diff --git a/boot/edk2/Config.in b/boot/edk2/Config.in
-index 2620c79..390e3e5 100644
+index 2f4737f..fd813f6 100644
 --- a/boot/edk2/Config.in
 +++ b/boot/edk2/Config.in
-@@ -107,6 +107,14 @@ comment "QEMU SBSA depends on ATF not using EDK2 as BL33"
-
+@@ -102,6 +102,14 @@ comment "QEMU SBSA depends on ATF not using EDK2 as BL33"
+ 
  endchoice
-
+ 
 +config BR2_TARGET_EDK2_RPI
 +	bool "Raspberry Pi 3 and 4 firmware"
 +	depends on BR2_aarch64
@@ -18,13 +18,13 @@ index 2620c79..390e3e5 100644
  	bool "OVMF Debug on Serial"
  	depends on BR2_ENABLE_DEBUG
 diff --git a/boot/edk2/edk2.mk b/boot/edk2/edk2.mk
-index 11d9b90..347c88f 100644
+index 81a9dfd..82a3995 100644
 --- a/boot/edk2/edk2.mk
 +++ b/boot/edk2/edk2.mk
-@@ -124,6 +124,11 @@ EDK2_BUILD_DIR = $(EDK2_PLATFORM_NAME)
-
+@@ -118,6 +118,11 @@ EDK2_BUILD_DIR = $(EDK2_PLATFORM_NAME)
+ 
  endif
-
+ 
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +EDK2_DEPENDENCIES += edk2-non-osi
 +EDK2_PACKAGES_PATHS += $(STAGING_DIR)/usr/share/edk2-non-osi
@@ -33,21 +33,21 @@ index 11d9b90..347c88f 100644
  EDK2_BASETOOLS_OPTS = \
  	EXTRA_LDFLAGS="$(HOST_LDFLAGS)" \
  	EXTRA_OPTFLAGS="$(HOST_CPPFLAGS)"
-@@ -142,6 +147,7 @@ EDK2_BUILD_ENV += \
+@@ -136,6 +141,7 @@ EDK2_BUILD_ENV += \
  	PYTHON_COMMAND=$(HOST_DIR)/bin/python3 \
  	IASL_PREFIX=$(HOST_DIR)/bin/ \
  	NASM_PREFIX=$(HOST_DIR)/bin/ \
-+	GCC5_BIN=$(TARGET_CROSS) \
- 	GCC5_$(EDK2_ARCH)_PREFIX=$(TARGET_CROSS)
-
++	GCC_BIN=$(TARGET_CROSS) \
+ 	GCC_$(EDK2_ARCH)_PREFIX=$(TARGET_CROSS)
+ 
  EDK2_BUILD_OPTS += \
-@@ -161,8 +167,40 @@ define EDK2_BUILD_CMDS
+@@ -155,8 +161,40 @@ define EDK2_BUILD_CMDS
  	build $(EDK2_BUILD_OPTS) all
  endef
-
+ 
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +EDK2_RPI_BUILD_OPTS = \
-+	-t GCC5 \
++	-t GCC \
 +	-n $(BR2_JLEVEL) \
 +	-a AARCH64 \
 +	-b $(EDK2_BUILD_TYPE) \
@@ -66,16 +66,16 @@ index 11d9b90..347c88f 100644
 +endif
 +
  define EDK2_INSTALL_IMAGES_CMDS
- 	cp -f $(@D)/Build/$(EDK2_BUILD_DIR)/$(EDK2_BUILD_TYPE)_GCC5/FV/*.fd $(BINARIES_DIR)
+ 	cp -f $(@D)/Build/$(EDK2_BUILD_DIR)/$(EDK2_BUILD_TYPE)_GCC/FV/*.fd $(BINARIES_DIR)
  endef
-
+ 
 +ifeq ($(BR2_TARGET_EDK2_RPI),y)
 +define EDK2_INSTALL_RPI_IMAGES
 +	$(INSTALL) -D -m 0644 \
-+		$(@D)/Build/RPi3/$(EDK2_BUILD_TYPE)_GCC5/FV/RPI_EFI.fd \
++		$(@D)/Build/RPi3/$(EDK2_BUILD_TYPE)_GCC/FV/RPI_EFI.fd \
 +		$(BINARIES_DIR)/RPI3_EFI.fd
 +	$(INSTALL) -D -m 0644 \
-+		$(@D)/Build/RPi4/$(EDK2_BUILD_TYPE)_GCC5/FV/RPI_EFI.fd \
++		$(@D)/Build/RPi4/$(EDK2_BUILD_TYPE)_GCC/FV/RPI_EFI.fd \
 +		$(BINARIES_DIR)/RPI4_EFI.fd
 +endef
 +EDK2_POST_INSTALL_IMAGES_HOOKS += EDK2_INSTALL_RPI_IMAGES
@@ -83,25 +83,24 @@ index 11d9b90..347c88f 100644
 +
  $(eval $(generic-package))
 diff --git a/package/dracut/dracut.mk b/package/dracut/dracut.mk
-index 0bf7553..440bd46 100644
+index e056495..492bd02 100644
 --- a/package/dracut/dracut.mk
 +++ b/package/dracut/dracut.mk
-@@ -10,7 +10,10 @@ DRACUT_LICENSE = GPL-2.0
- DRACUT_LICENSE_FILES = COPYING
- DRACUT_CPE_ID_VALID = YES
-
--HOST_DRACUT_DEPENDENCIES = host-pkgconf host-kmod host-cross-ldd
-+HOST_DRACUT_DEPENDENCIES = host-pkgconf host-kmod host-cross-ldd host-rustc
+@@ -13,7 +13,9 @@ DRACUT_CPE_ID_VALID = YES
+ HOST_DRACUT_DEPENDENCIES = host-pkgconf host-kmod host-cross-ldd
+ # Dracut is not a real autotools package, and the hand-written
+ # ./configure script does not preserve LDFLAGS for make.
+-HOST_DRACUT_MAKE_ENV = $(HOST_CONFIGURE_OPTS)
 +HOST_DRACUT_MAKE_ENV = \
-+	CARGO_HOME=$(BR_CARGO_HOME) \
-+	LDFLAGS="$(HOST_LDFLAGS)"
++	$(HOST_CONFIGURE_OPTS) \
++	CARGO_HOME=$(BR_CARGO_HOME)
  HOST_DRACUT_INSTALL_OPTS = systemdsystemunitdir="" install
-
- define HOST_DRACUT_POST_INSTALL_WRAPPER_SCRIPT
-@@ -33,6 +36,15 @@ define HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
+ 
+ ifeq ($(BR2_PACKAGE_HOST_RUSTC),y)
+@@ -43,6 +45,15 @@ define HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
  endef
  HOST_DRACUT_POST_INSTALL_HOOKS += HOST_DRACUT_POST_INSTALL_LIBC_LINKS_MODULE
-
+ 
 +ifeq ($(BR2_INIT_SYSTEMD),y)
 +define HOST_DRACUT_POST_INSTALL_SYSTEMD_MODULES
 +	mkdir -p $(HOST_DIR)/lib/dracut/modules.d
@@ -137,16 +136,16 @@ index 3301285..6eb68ac 100644
 +	trap 'for m in "${staged_modules[@]}"; do rm -f "$m"; done' EXIT
 +fi
  (exec "${topdir}/bin/dracut.real" "${@}")
-
+ 
  if [ -n "${DRACUT_LDD}" ]; then
 diff --git a/package/edk2-non-osi/edk2-non-osi.mk b/package/edk2-non-osi/edk2-non-osi.mk
-index 57c8fca..6069e80 100644
+index 48b34bc..879b893 100644
 --- a/package/edk2-non-osi/edk2-non-osi.mk
 +++ b/package/edk2-non-osi/edk2-non-osi.mk
 @@ -15,6 +15,14 @@ EDK2_NON_OSI_LICENSE += BSD-2-Clause-Patent (Marvell Armada)
  EDK2_NON_OSI_LICENSE_FILES += Silicon/Marvell/Armada7k8k/DeviceTree/Armada80x0McBin.inf
  EDK2_NON_OSI_DIRS += Silicon/Marvell/Armada7k8k/DeviceTree
-
+ 
 +EDK2_NON_OSI_LICENSE += , BSD-3-Clause (Raspberry Pi TF-A)
 +EDK2_NON_OSI_LICENSE_FILES += \
 +	Platform/RaspberryPi/RPi3/TrustedFirmware/License.txt \
@@ -159,18 +158,17 @@ index 57c8fca..6069e80 100644
  # the selected description files to staging, for other packages to build with.
  define EDK2_NON_OSI_INSTALL_STAGING_CMDS
 diff --git a/package/libostree/Config.in b/package/libostree/Config.in
-index 49eed65..d0bec81 100644
+index 49eed65..c4188e3 100644
 --- a/package/libostree/Config.in
 +++ b/package/libostree/Config.in
-@@ -1,27 +1,32 @@
+@@ -1,5 +1,6 @@
  config BR2_PACKAGE_LIBOSTREE
  	bool "libostree"
 +	depends on BR2_INIT_SYSTEMD
  	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgpgme, libgpg-error
  	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
  	depends on BR2_USE_WCHAR # libglib2
- 	depends on BR2_USE_MMU # e2fsprogs, libglib2, libgpgme
- 	# doesn't build with musl due to lack of TEMP_FAILURE_RETRY()
+@@ -8,20 +9,24 @@ config BR2_PACKAGE_LIBOSTREE
  	depends on !BR2_TOOLCHAIN_USES_MUSL
  	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_8 # loop_config
  	select BR2_PACKAGE_E2FSPROGS
@@ -187,9 +185,9 @@ index 49eed65..d0bec81 100644
  	help
  	  OSTree is an upgrade system for Linux-based operating
  	  systems.
-
+ 
  	  https://ostree.readthedocs.io/en/latest/
-
+ 
 -comment "libostree needs a uClibc or glibc toolchain w/ threads, dynamic library, wchar, headers >= 5.8"
 -	depends on !BR2_TOOLCHAIN_HAS_THREADS || BR2_STATIC_LIBS \
 -		|| !BR2_USE_WCHAR || BR2_TOOLCHAIN_USES_MUSL || \
@@ -213,18 +211,18 @@ index d4645c5..94912c8 100644
 +# Hash for license file
  sha256  b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c  COPYING
 diff --git a/package/libostree/libostree.mk b/package/libostree/libostree.mk
-index a737dc0..6ff53cf 100644
+index a737dc0..e2e3d06 100644
 --- a/package/libostree/libostree.mk
 +++ b/package/libostree/libostree.mk
 @@ -4,24 +4,49 @@
  #
  ################################################################################
-
+ 
 -LIBOSTREE_VERSION = 2023.8
 +LIBOSTREE_VERSION = 2026.1
  LIBOSTREE_SOURCE = libostree-$(LIBOSTREE_VERSION).tar.xz
  LIBOSTREE_SITE = https://github.com/ostreedev/ostree/releases/download/v$(LIBOSTREE_VERSION)
-
+ 
  LIBOSTREE_LICENSE = LGPL-2.0+
  LIBOSTREE_LICENSE_FILES = COPYING
 -LIBOSTREE_DEPENDENCIES = e2fsprogs host-bison host-pkgconf libglib2 libgpg-error libgpgme xz
@@ -242,7 +240,7 @@ index a737dc0..6ff53cf 100644
 +	xz \
 +	zlib
  LIBOSTREE_INSTALL_STAGING = YES
-
+ 
  LIBOSTREE_CONF_ENV = \
  	GPG_ERROR_CONFIG=$(STAGING_DIR)/usr/bin/gpg-error-config
  LIBOSTREE_CONF_OPTS += \
@@ -267,13 +265,13 @@ index a737dc0..6ff53cf 100644
 -	--disable-man
 +	--disable-man \
 +	--disable-otmpfile
-
+ 
  ifeq ($(BR2_PACKAGE_GOBJECT_INTROSPECTION),y)
  LIBOSTREE_DEPENDENCIES += gobject-introspection
 @@ -31,48 +56,6 @@ else
  LIBOSTREE_CONF_OPTS += --disable-introspection
  endif
-
+ 
 -ifeq ($(BR2_PACKAGE_OPENSSL),y)
 -LIBOSTREE_CONF_OPTS += --with-openssl
 -LIBOSTREE_DEPENDENCIES += openssl
@@ -322,7 +320,7 @@ index a737dc0..6ff53cf 100644
 @@ -80,13 +63,5 @@ else
  LIBOSTREE_CONF_OPTS += --without-selinux
  endif
-
+ 
 -ifeq ($(BR2_INIT_SYSTEMD),y)
 -LIBOSTREE_CONF_OPTS += \
 -	--with-libsystemd \
@@ -331,92 +329,27 @@ index a737dc0..6ff53cf 100644
 -else
 -LIBOSTREE_CONF_OPTS += --without-libsystemd
 -endif
-
+ 
  $(eval $(autotools-package))
 diff --git a/package/linux-tools/linux-tool-selftests.mk.in b/package/linux-tools/linux-tool-selftests.mk.in
-index db7e4fa..75442f3 100644
+index 032a71e..4f2252c 100644
 --- a/package/linux-tools/linux-tool-selftests.mk.in
 +++ b/package/linux-tools/linux-tool-selftests.mk.in
-@@ -24,7 +24,8 @@ SELFTESTS_DEPENDENCIES = \
- SELFTESTS_MAKE_FLAGS = \
+@@ -25,7 +25,8 @@ SELFTESTS_MAKE_FLAGS = \
  	$(LINUX_MAKE_FLAGS) \
  	ARCH=$(SELFTESTS_ARCH) \
--	KHDR_DIR=$(LINUX_DIR)/usr/include
-+	KHDR_DIR=$(LINUX_DIR)/usr/include \
+ 	KHDR_DIR=$(LINUX_DIR)/usr/include \
+-	KHDR_INCLUDES="-isystem $(LINUX_DIR)/usr/include"
++	KHDR_INCLUDES="-isystem $(LINUX_DIR)/usr/include" \
 +	TARGETS=tpm2
-
+ 
  LINUX_TOOLS_BIN_ARCH_EXCLUDE += \
  	/usr/lib/kselftests/tc-testing/
-diff --git a/package/strace/strace.mk b/package/strace/strace.mk
-index a068893..1e7373c 100644
---- a/package/strace/strace.mk
-+++ b/package/strace/strace.mk
-@@ -12,6 +12,10 @@ STRACE_LICENSE_FILES = COPYING LGPL-2.1-or-later
- STRACE_CPE_ID_VALID = YES
- STRACE_CONF_OPTS = --enable-mpers=no
-
-+# strace 7.0 does not yet handle the newer io_uring_buf_reg layout
-+# from the toolchain headers, so force its bundled linux UAPI headers.
-+STRACE_CONF_OPTS += --enable-bundled=yes
-+
- ifeq ($(BR2_PACKAGE_LIBUNWIND),y)
- STRACE_DEPENDENCIES += libunwind
- STRACE_CONF_OPTS += --with-libunwind
-diff --git a/support/download/helpers b/support/download/helpers
-index f4102e3..dd61bc3 100755
---- a/support/download/helpers
-+++ b/support/download/helpers
-@@ -64,8 +64,12 @@ mk_tar_gz() {
-              --format=posix --pax-option="${pax_options}" --mode='go=u,go-w' \
-              -T "${tmp}.sorted" >"${tmp}.tar"
-
--    # Compress the archive
--    gzip -6 -n <"${tmp}.tar" >"${out}"
-+    # Compress the archive in the same format as the original tarball
-+    # (see post_process_unpack), so the archive matches its file name.
-+    case "${post_process_compression:-gz}" in
-+    xz) xz -6 -T1 <"${tmp}.tar" >"${out}";;
-+    *)  gzip -6 -n <"${tmp}.tar" >"${out}";;
-+    esac
-
-     rm -f "${tmp}"{.list,.sorted,.tar}
-
-@@ -77,8 +81,14 @@ post_process_unpack() {
-     local tarball="${2}"
-     local one_file
-
-+    if xz -t "${tarball}" 2>/dev/null; then
-+        post_process_compression=xz
-+    else
-+        post_process_compression=gz
-+    fi
-+
-     mkdir "${dest}"
--    ${TAR} -C "${dest}" --strip-components=1 -xzf "${tarball}"
-+    ${TAR} -C "${dest}" --strip-components=1 -xf "${tarball}"
-     one_file="$(find "${dest}" -type f -print0 |LC_ALL=C sort -z |sed 's/\x0.*//')"
-     touch -r "${one_file}" "${dest}.timestamp"
- }
-diff --git a/support/download/git b/support/download/git
-index fdc0060..fa9d65a 100755
---- a/support/download/git
-+++ b/support/download/git
-@@ -132,6 +132,11 @@ fi
- 
- _git remote set-url origin "'${uri}'"
- 
-+# Point HEAD away from the unborn default branch. Git 2.29+ refuses to
-+# fetch into a checked-out branch, so 'cset:cset' never creates
-+# refs/heads/<cset> for names such as master.
-+_git symbolic-ref HEAD refs/heads/buildroot-dl
-+
- printf "Fetching all references\n"
- _git fetch "${@}" origin
- _git fetch "${@}" origin -t -f
 diff --git a/package/pkg-cargo.mk b/package/pkg-cargo.mk
+index 47a6353..59a7bb5 100644
 --- a/package/pkg-cargo.mk
 +++ b/package/pkg-cargo.mk
-@@ -153,15 +153,18 @@
+@@ -153,15 +153,18 @@ PKG_CARGO_ENV += \
  	CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS="false"
  endif
  
@@ -439,3 +372,69 @@ diff --git a/package/pkg-cargo.mk b/package/pkg-cargo.mk
  HOST_PKG_CARGO_ENV = \
  	$(PKG_COMMON_CARGO_ENV) \
  	RUSTFLAGS="$(addprefix -C link-args=,$(HOST_LDFLAGS))"
+diff --git a/package/strace/strace.mk b/package/strace/strace.mk
+index 8eadb7e..04c3276 100644
+--- a/package/strace/strace.mk
++++ b/package/strace/strace.mk
+@@ -12,6 +12,10 @@ STRACE_LICENSE_FILES = COPYING LGPL-2.1-or-later
+ STRACE_CPE_ID_VALID = YES
+ STRACE_CONF_OPTS = --enable-mpers=no
+ 
++# strace 7.0 does not yet handle the newer io_uring_buf_reg layout
++# from the toolchain headers, so force its bundled linux UAPI headers.
++STRACE_CONF_OPTS += --enable-bundled=yes
++
+ ifeq ($(BR2_PACKAGE_LIBUNWIND),y)
+ STRACE_DEPENDENCIES += libunwind
+ STRACE_CONF_OPTS += --with-libunwind
+diff --git a/support/download/git b/support/download/git
+index fdc0060..fa9d65a 100755
+--- a/support/download/git
++++ b/support/download/git
+@@ -132,6 +132,11 @@ fi
+ 
+ _git remote set-url origin "'${uri}'"
+ 
++# Point HEAD away from the unborn default branch. Git 2.29+ refuses to
++# fetch into a checked-out branch, so 'cset:cset' never creates
++# refs/heads/<cset> for names such as master.
++_git symbolic-ref HEAD refs/heads/buildroot-dl
++
+ printf "Fetching all references\n"
+ _git fetch "${@}" origin
+ _git fetch "${@}" origin -t -f
+diff --git a/support/download/helpers b/support/download/helpers
+index f4102e3..dd61bc3 100755
+--- a/support/download/helpers
++++ b/support/download/helpers
+@@ -64,8 +64,12 @@ mk_tar_gz() {
+              --format=posix --pax-option="${pax_options}" --mode='go=u,go-w' \
+              -T "${tmp}.sorted" >"${tmp}.tar"
+ 
+-    # Compress the archive
+-    gzip -6 -n <"${tmp}.tar" >"${out}"
++    # Compress the archive in the same format as the original tarball
++    # (see post_process_unpack), so the archive matches its file name.
++    case "${post_process_compression:-gz}" in
++    xz) xz -6 -T1 <"${tmp}.tar" >"${out}";;
++    *)  gzip -6 -n <"${tmp}.tar" >"${out}";;
++    esac
+ 
+     rm -f "${tmp}"{.list,.sorted,.tar}
+ 
+@@ -77,8 +81,14 @@ post_process_unpack() {
+     local tarball="${2}"
+     local one_file
+ 
++    if xz -t "${tarball}" 2>/dev/null; then
++        post_process_compression=xz
++    else
++        post_process_compression=gz
++    fi
++
+     mkdir "${dest}"
+-    ${TAR} -C "${dest}" --strip-components=1 -xzf "${tarball}"
++    ${TAR} -C "${dest}" --strip-components=1 -xf "${tarball}"
+     one_file="$(find "${dest}" -type f -print0 |LC_ALL=C sort -z |sed 's/\x0.*//')"
+     touch -r "${one_file}" "${dest}.timestamp"
+ }
